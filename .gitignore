@@ -1,0 +1,19 @@
+# Environment Variables (contains sensitive information)
+.env
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build outputs
+target/
+build/
+*.log
+
+# Docker volumes
+data/
