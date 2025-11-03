@@ -67,13 +67,13 @@ services:
       dockerfile: Dockerfile
     container_name: api-gateway
     ports:
-      - "${API_GATEWAY_PORT:-8080}:8080"
+      - "8080:8080"
     depends_on:
       consul:
         condition: service_healthy
     environment:
-      SPRING_CLOUD_CONSUL_HOST: ${CONSUL_HOST}
-      SPRING_CLOUD_CONSUL_PORT: ${CONSUL_PORT}
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
     networks:
       - gomirai-network
     restart: on-failure
@@ -85,17 +85,14 @@ services:
       dockerfile: Dockerfile
     container_name: auth-service
     ports:
-      - "${AUTH_SERVICE_PORT:-8081}:8081"
+      - "8081:8081"
     depends_on:
       consul:
         condition: service_healthy
       kafka:
         condition: service_healthy
     environment:
-      SPRING_CLOUD_CONSUL_HOST: ${CONSUL_HOST}
-      SPRING_CLOUD_CONSUL_PORT: ${CONSUL_PORT}
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
-      SPRING_DATA_MONGODB_URI: ${MONGODB_AUTH_URI}
+      SPRING_DATA_MONGODB_URI: ${AUTH_MONGODB_URI}
     networks:
       - gomirai-network
     restart: on-failure
@@ -107,17 +104,14 @@ services:
       dockerfile: Dockerfile
     container_name: user-service
     ports:
-      - "${USER_SERVICE_PORT:-8082}:8082"
+      - "8082:8082"
     depends_on:
       consul:
         condition: service_healthy
       kafka:
         condition: service_healthy
     environment:
-      SPRING_CLOUD_CONSUL_HOST: ${CONSUL_HOST}
-      SPRING_CLOUD_CONSUL_PORT: ${CONSUL_PORT}
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
-      SPRING_DATA_MONGODB_URI: ${MONGODB_USER_URI}
+      SPRING_DATA_MONGODB_URI: ${USER_MONGODB_URI}
     networks:
       - gomirai-network
     restart: on-failure
