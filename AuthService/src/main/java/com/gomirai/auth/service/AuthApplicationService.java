@@ -12,6 +12,7 @@ import com.gomirai.auth.dto.LoginRequest;
 import com.gomirai.auth.dto.RegisterRequest;
 import com.gomirai.auth.dto.TokenValidationResponse;
 import com.gomirai.auth.events.UserRegisteredEvent;
+import com.gomirai.auth.exception.BusinessException;
 import com.gomirai.auth.messaging.UserEventsProducer;
 import com.gomirai.auth.model.AuthProvider;
 import com.gomirai.auth.model.AuthUser;
@@ -39,11 +40,18 @@ public class AuthApplicationService {
         this.eventsProducer = eventsProducer;
     }
 
-    @Transactional
     public AuthResponse register(RegisterRequest request) {
+        // Kiểm tra trùng số điện thoại TRƯỚC khi bắt đầu transaction
         if (authUserRepository.existsByPhoneNumber(request.getPhoneNumber())) {
-            throw new IllegalArgumentException("Số điện thoại đã tồn tại");
+            throw new BusinessException("Số điện thoại đã tồn tại");
         }
+        
+        // Bắt đầu transaction chỉ khi cần save vào DB
+        return registerInternal(request);
+    }
+    
+    @Transactional
+    private AuthResponse registerInternal(RegisterRequest request) {
         AuthUser user = new AuthUser();
         user.setUserId(UUID.randomUUID());
         user.setPhoneNumber(request.getPhoneNumber());
@@ -60,9 +68,9 @@ public class AuthApplicationService {
 
     public AuthResponse login(LoginRequest request) {
         AuthUser user = authUserRepository.findByPhoneNumber(request.getPhoneNumber())
-                .orElseThrow(() -> new IllegalArgumentException("Thông tin đăng nhập không hợp lệ"));
+                .orElseThrow(() -> new BusinessException("Thông tin đăng nhập không hợp lệ"));
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
-            throw new IllegalArgumentException("Thông tin đăng nhập không hợp lệ");
+            throw new BusinessException("Thông tin đăng nhập không hợp lệ");
         }
         String token = jwtService.generateToken(user.getUserId(), user.getRole().name());
         return new AuthResponse(user.getUserId(), user.getRole().name(), token);
