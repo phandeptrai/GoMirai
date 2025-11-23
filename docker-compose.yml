@@ -72,6 +72,7 @@ services:
     environment:
       SPRING_CLOUD_CONSUL_HOST: consul
       SPRING_CLOUD_CONSUL_PORT: 8500
+      SECURITY_JWT_SECRET: ${JWT_SECRET}
     networks:
       - gomirai-network
     restart: on-failure
@@ -82,8 +83,11 @@ services:
       context: ./AuthService
       dockerfile: Dockerfile
     container_name: auth-service
-    ports:
-      - "8081:8081"
+    # ✅ SECURITY: Không expose port ra ngoài, chỉ giao tiếp internal qua API Gateway
+    # ports:
+    #   - "8081:8081"
+    expose:
+      - "8081"  # Chỉ expose trong internal network
     depends_on:
       consul:
         condition: service_healthy
@@ -102,8 +106,11 @@ services:
       context: ./UserService
       dockerfile: Dockerfile
     container_name: user-service
-    ports:
-      - "8082:8082"
+    # ✅ SECURITY: Không expose port ra ngoài, chỉ giao tiếp internal qua API Gateway
+    # ports:
+    #   - "8082:8082"
+    expose:
+      - "8082"  # Chỉ expose trong internal network
     depends_on:
       consul:
         condition: service_healthy

@@ -10,3 +10,4 @@ public record UserRegisteredEvent(UUID userId, String phoneNumber, String role) 
 
 
 
+

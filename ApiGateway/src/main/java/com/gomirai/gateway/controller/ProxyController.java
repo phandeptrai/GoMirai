@@ -24,6 +24,10 @@ import org.springframework.web.client.RestTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/**
+ * ProxyController - Main API Gateway Router
+ * Routes ALL API requests to microservices
+ */
 @Controller
 public class ProxyController {
 
@@ -87,7 +91,8 @@ public class ProxyController {
 
 		try {
 			ResponseEntity<byte[]> resp = restTemplate.exchange(target, method, httpEntity, byte[].class);
-			logger.info("Proxied {} {} -> {} (status: {})", method, requestUri, target, resp.getStatusCode());
+			// ✅ SECURITY: Log without full target URL to avoid logging sensitive query params
+			logger.info("Proxied {} {} to service {} (status: {})", method, requestUri, actualServiceName, resp.getStatusCode());
 			HttpHeaders filteredHeaders = filterHeaders(resp.getHeaders());
 			return ResponseEntity.status(resp.getStatusCode()).headers(filteredHeaders).body(resp.getBody());
 		} catch (HttpStatusCodeException e) {
@@ -104,12 +109,18 @@ public class ProxyController {
 			return ResponseEntity.status(e.getStatusCode())
 				.headers(responseHeaders)
 				.body(errorBody);
+		} catch (IllegalArgumentException e) {
+			// Invalid service ID or configuration
+			logger.warn("Invalid request: {} {}", method, requestUri);
+			return ResponseEntity.status(400)
+				.contentType(MediaType.APPLICATION_JSON)
+				.body("{\"error\":\"Bad Request\",\"message\":\"Invalid service\"}".getBytes());
 		} catch (Exception e) {
+			// ✅ SECURITY: Log detailed error but return generic message to client
 			logger.error("Gateway error: {} {} -> {}", method, requestUri, target, e);
-			String errorMessage = String.format("{\"error\":\"Gateway Error\",\"message\":\"%s\"}", e.getMessage());
 			return ResponseEntity.status(502)
 				.contentType(MediaType.APPLICATION_JSON)
-				.body(errorMessage.getBytes());
+				.body("{\"error\":\"Bad Gateway\",\"message\":\"Service temporarily unavailable\"}".getBytes());
 		}
 	}
 
@@ -143,7 +154,7 @@ public class ProxyController {
 
 	private String mapServiceName(String serviceId) {
 		if (serviceId == null || serviceId.isEmpty()) {
-			return serviceId;
+			throw new IllegalArgumentException("Service ID cannot be empty");
 		}
 		String normalized = serviceId.toLowerCase();
 		switch (normalized) {
@@ -153,12 +164,8 @@ public class ProxyController {
 			case "users":
 				return "UserService";
 			default:
-				if (serviceId.length() > 0) {
-					return serviceId.substring(0, 1).toUpperCase() + 
-					       (serviceId.length() > 1 ? serviceId.substring(1).toLowerCase() : "") + 
-					       "Service";
-				}
-				return serviceId;
+				// ✅ SECURITY: Reject unknown services để prevent service discovery attacks
+				throw new IllegalArgumentException("Unknown service: " + serviceId);
 		}
 	}
 
@@ -178,3 +185,4 @@ public class ProxyController {
 		}
 	}
 }
+

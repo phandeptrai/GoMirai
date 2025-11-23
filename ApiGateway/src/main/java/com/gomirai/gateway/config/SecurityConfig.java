@@ -1,57 +1,66 @@
-package com.gomirai.auth.config;
+package com.gomirai.gateway.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import com.gomirai.auth.filter.RateLimitingFilter;
-import com.gomirai.auth.security.JwtAuthenticationFilter;
+import com.gomirai.gateway.security.JwtAuthenticationEntryPoint;
+import com.gomirai.gateway.security.JwtAuthenticationFilter;
 
 import java.util.Arrays;
+import java.util.List;
 
 @Configuration
+@EnableWebSecurity
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
-    private final RateLimitingFilter rateLimitingFilter;
+    private final JwtAuthenticationEntryPoint authenticationEntryPoint;
 
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
-                         RateLimitingFilter rateLimitingFilter) {
+                         JwtAuthenticationEntryPoint authenticationEntryPoint) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
-        this.rateLimitingFilter = rateLimitingFilter;
+        this.authenticationEntryPoint = authenticationEntryPoint;
     }
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-            // CSRF disabled for REST API with JWT
+            // CSRF disabled vì đây là REST API với JWT (stateless)
             .csrf(csrf -> csrf.disable())
             
-            // Stateless session
+            // Session stateless vì dùng JWT
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             
             // CORS configuration
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             
-            // Authorization
-            .authorizeHttpRequests(reg -> reg
-                .requestMatchers("/actuator/health").permitAll()  // Only health
-                .requestMatchers(HttpMethod.POST, "/auth/register", "/auth/login").permitAll()
-                .requestMatchers(HttpMethod.POST, "/auth/validate").permitAll()
+            // Exception handling
+            .exceptionHandling(ex -> ex.authenticationEntryPoint(authenticationEntryPoint))
+            
+            // Authorization rules
+            .authorizeHttpRequests(auth -> auth
+                // Public endpoints
+                .requestMatchers("/actuator/health").permitAll()  // Only health endpoint
+                .requestMatchers("/health/**").permitAll()  // Service health checks
+                
+                // Auth endpoints - không cần JWT
+                .requestMatchers(HttpMethod.POST, "/api/auth/register").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
+                
+                // Tất cả các requests khác cần authentication
                 .anyRequest().authenticated()
             )
             
-            // Add Rate Limiting Filter BEFORE JWT filter
-            .addFilterBefore(rateLimitingFilter, UsernamePasswordAuthenticationFilter.class)
+            // Add JWT filter
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         // Security headers
@@ -67,14 +76,17 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
+        
+        // Allowed origins - nên config từ environment variable trong production
         configuration.setAllowedOrigins(Arrays.asList(
-            "http://localhost:3000",
-            "http://localhost:4200",
-            "http://localhost:8080"
+            "http://localhost:3000",  // React dev server
+            "http://localhost:4200",  // Angular dev server
+            "http://localhost:8080"   // Gateway itself
         ));
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         configuration.setAllowedHeaders(Arrays.asList("*"));
-        configuration.setExposedHeaders(Arrays.asList("Authorization"));
+        configuration.setExposedHeaders(Arrays.asList("Authorization", "Content-Type"));
         configuration.setAllowCredentials(true);
         configuration.setMaxAge(3600L);
         
@@ -82,9 +94,5 @@ public class SecurityConfig {
         source.registerCorsConfiguration("/**", configuration);
         return source;
     }
-
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
 }
+
