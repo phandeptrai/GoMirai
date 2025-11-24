@@ -11,14 +11,14 @@ import com.gomirai.auth.dto.AuthResponse;
 import com.gomirai.auth.dto.LoginRequest;
 import com.gomirai.auth.dto.RegisterRequest;
 import com.gomirai.auth.dto.TokenValidationResponse;
-import com.gomirai.auth.events.UserRegisteredEvent;
-import com.gomirai.auth.exception.BusinessException;
+import com.gomirai.common.dto.event.UserRegisteredEvent;
+import com.gomirai.common.exception.BusinessException;
 import com.gomirai.auth.messaging.UserEventsProducer;
-import com.gomirai.auth.model.AuthProvider;
+import com.gomirai.common.enums.AuthProvider;
 import com.gomirai.auth.model.AuthUser;
-import com.gomirai.auth.model.Role;
+import com.gomirai.common.enums.Role;
 import com.gomirai.auth.repository.AuthUserRepository;
-import com.gomirai.auth.security.JwtService;
+import com.gomirai.common.security.JwtService;
 
 import io.jsonwebtoken.Claims;
 

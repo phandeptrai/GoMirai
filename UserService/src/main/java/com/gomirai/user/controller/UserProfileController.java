@@ -16,12 +16,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.gomirai.user.dto.CreateUserProfileRequest;
-import com.gomirai.user.dto.ErrorResponse;
 import com.gomirai.user.dto.UpdateUserProfileRequest;
 import com.gomirai.user.dto.UserProfileResponse;
 
 import jakarta.validation.Valid;
-import com.gomirai.user.security.SecurityUtils;
+import com.gomirai.common.security.SecurityUtils;
 import com.gomirai.user.service.UserProfileService;
 
 import lombok.RequiredArgsConstructor;

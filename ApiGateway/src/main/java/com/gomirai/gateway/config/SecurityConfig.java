@@ -1,5 +1,6 @@
 package com.gomirai.gateway.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -12,8 +13,8 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import com.gomirai.gateway.security.JwtAuthenticationEntryPoint;
-import com.gomirai.gateway.security.JwtAuthenticationFilter;
+import com.gomirai.common.security.JwtAuthenticationEntryPoint;
+import com.gomirai.common.security.JwtAuthenticationFilter;
 
 import java.util.Arrays;
 import java.util.List;
@@ -24,6 +25,24 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final JwtAuthenticationEntryPoint authenticationEntryPoint;
+
+    @Value("${cors.allowed.origins}")
+    private String allowedOrigins;
+
+    @Value("${cors.allowed.methods}")
+    private String allowedMethods;
+
+    @Value("${cors.allowed.headers}")
+    private String allowedHeaders;
+
+    @Value("${cors.exposed.headers}")
+    private String exposedHeaders;
+
+    @Value("${cors.allow.credentials}")
+    private boolean allowCredentials;
+
+    @Value("${cors.max.age}")
+    private long maxAge;
 
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
                          JwtAuthenticationEntryPoint authenticationEntryPoint) {
@@ -77,18 +96,19 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         
-        // Allowed origins - nên config từ environment variable trong production
-        configuration.setAllowedOrigins(Arrays.asList(
-            "http://localhost:3000",  // React dev server
-            "http://localhost:4200",  // Angular dev server
-            "http://localhost:8080"   // Gateway itself
-        ));
+        // ✅ Read from application.properties - ApiGateway chỉ cho phép Angular frontend
+        configuration.setAllowedOrigins(Arrays.asList(allowedOrigins.split(",")));
+        configuration.setAllowedMethods(Arrays.asList(allowedMethods.split(",")));
         
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
-        configuration.setAllowedHeaders(Arrays.asList("*"));
-        configuration.setExposedHeaders(Arrays.asList("Authorization", "Content-Type"));
-        configuration.setAllowCredentials(true);
-        configuration.setMaxAge(3600L);
+        if ("*".equals(allowedHeaders)) {
+            configuration.setAllowedHeaders(Arrays.asList("*"));
+        } else {
+            configuration.setAllowedHeaders(Arrays.asList(allowedHeaders.split(",")));
+        }
+        
+        configuration.setExposedHeaders(Arrays.asList(exposedHeaders.split(",")));
+        configuration.setAllowCredentials(allowCredentials);
+        configuration.setMaxAge(maxAge);
         
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);

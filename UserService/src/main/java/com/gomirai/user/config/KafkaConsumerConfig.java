@@ -13,7 +13,7 @@ import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
 
-import com.gomirai.user.events.UserRegisteredEvent;
+import com.gomirai.common.dto.event.UserRegisteredEvent;
 
 @Configuration
 public class KafkaConsumerConfig {

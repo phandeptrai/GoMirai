@@ -61,8 +61,8 @@ services:
   # API Gateway
   api-gateway:
     build:
-      context: ./ApiGateway
-      dockerfile: Dockerfile
+      context: .  # Build from root to access common-lib
+      dockerfile: ApiGateway/Dockerfile
     container_name: api-gateway
     ports:
       - "8080:8080"
@@ -80,8 +80,8 @@ services:
   # Auth Service
   auth-service:
     build:
-      context: ./AuthService
-      dockerfile: Dockerfile
+      context: .  # Build from root to access common-lib
+      dockerfile: AuthService/Dockerfile
     container_name: auth-service
     # ✅ SECURITY: Không expose port ra ngoài, chỉ giao tiếp internal qua API Gateway
     # ports:
@@ -96,6 +96,9 @@ services:
     environment:
       SPRING_DATA_MONGODB_URI: ${AUTH_MONGODB_URI}
       SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
     networks:
       - gomirai-network
     restart: on-failure
@@ -103,8 +106,8 @@ services:
   # User Service
   user-service:
     build:
-      context: ./UserService
-      dockerfile: Dockerfile
+      context: .  # Build from root to access common-lib
+      dockerfile: UserService/Dockerfile
     container_name: user-service
     # ✅ SECURITY: Không expose port ra ngoài, chỉ giao tiếp internal qua API Gateway
     # ports:
@@ -119,6 +122,9 @@ services:
     environment:
       SPRING_DATA_MONGODB_URI: ${USER_MONGODB_URI}
       SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
     networks:
       - gomirai-network
     restart: on-failure

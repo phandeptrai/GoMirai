@@ -4,7 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
-import com.gomirai.auth.events.UserRegisteredEvent;
+import com.gomirai.common.dto.event.UserRegisteredEvent;
 
 @Component
 public class UserEventsProducer {

@@ -7,6 +7,9 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
+import com.gomirai.common.enums.AuthProvider;
+import com.gomirai.common.enums.Role;
+
 @Document(collection = "auth_users")
 public class AuthUser {
 

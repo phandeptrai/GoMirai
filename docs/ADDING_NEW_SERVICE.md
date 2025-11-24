@@ -1,25 +1,26 @@
-# 🚀 Hướng Dẫn Thêm Service Mới Vào GoMirai
+# 🚀 Hướng Dẫn Thêm Service Mới Vào GoMirai (With Common Library)
 
-**Version:** 2.0  
-**Last Updated:** 2025-11-23  
+**Version:** 3.0  
+**Last Updated:** 2025-11-24  
 **Difficulty:** Intermediate  
 
-Tài liệu này hướng dẫn **CHI TIẾT** cách thêm một microservice mới vào hệ thống GoMirai với **ĐẦY ĐỦ** security, validation, error handling, và best practices.
+Tài liệu này hướng dẫn **CHI TIẾT** cách thêm một microservice mới vào hệ thống GoMirai sử dụng **gomirai-common-lib** để tránh code duplication và đảm bảo consistency.
 
 ---
 
 ## 📋 Mục Lục
 
 1. [Prerequisites](#1-prerequisites)
-2. [Tạo Service Mới](#2-tạo-service-mới)
-3. [Security Configuration](#3-security-configuration)
-4. [Validation & Error Handling](#4-validation--error-handling)
-5. [Kafka Integration](#5-kafka-integration)
-6. [Docker Configuration](#6-docker-configuration)
-7. [Gateway Configuration](#7-gateway-configuration)
-8. [Testing & Verification](#8-testing--verification)
-9. [Checklist](#9-checklist)
-10. [Troubleshooting](#10-troubleshooting)
+2. [Understanding Common Library](#2-understanding-common-library)
+3. [Tạo Service Mới](#3-tạo-service-mới)
+4. [Configure Security (Using Common Lib)](#4-configure-security-using-common-lib)
+5. [Validation & Error Handling (Using Common Lib)](#5-validation--error-handling-using-common-lib)
+6. [Kafka Integration (Using Common Lib)](#6-kafka-integration-using-common-lib)
+7. [Docker Configuration](#7-docker-configuration)
+8. [Gateway Configuration](#8-gateway-configuration)
+9. [Testing & Verification](#9-testing--verification)
+10. [Checklist](#10-checklist)
+11. [Troubleshooting](#11-troubleshooting)
 
 ---
 
@@ -32,6 +33,7 @@ Tài liệu này hướng dẫn **CHI TIẾT** cách thêm một microservice m�
 - ✅ Apache Kafka
 - ✅ Docker & Docker Compose
 - ✅ MongoDB
+- ✅ **Maven dependency management**
 
 ### 1.2. Required Tools
 - ✅ JDK 21
@@ -46,6 +48,11 @@ Tài liệu này hướng dẫn **CHI TIẾT** cách thêm một microservice m�
 git clone <repo-url>
 cd GoMirai
 
+# Build common library FIRST!
+cd gomirai-common-lib
+mvn clean install
+cd ..
+
 # Verify .env file exists
 ls -la .env
 
@@ -55,9 +62,77 @@ grep JWT_SECRET .env
 
 ---
 
-## 2. Tạo Service Mới
+## 2. Understanding Common Library
 
-### 2.1. Spring Initializr Configuration
+### 2.1. What is gomirai-common-lib?
+
+**gomirai-common-lib** là một Maven library chứa shared components được sử dụng bởi TẤT CẢ microservices trong GoMirai.
+
+### 2.2. Components Provided by Common Library
+
+#### ✅ **Security** (`com.gomirai.common.security`)
+- `JwtService` - JWT token generation & validation
+- `JwtAuthenticationFilter` - Spring Security filter
+- `JwtAuthenticationEntryPoint` - 401 error handler
+- `SecurityUtils` - Authorization helpers
+
+#### ✅ **DTOs** (`com.gomirai.common.dto`)
+- `response/ErrorResponse` - Standard error response
+- `response/ValidationErrorResponse` - Validation errors
+- `response/ApiResponse<T>` - Generic API response
+- `event/BaseEvent` - Base for all Kafka events
+- `event/UserRegisteredEvent` - User registration event
+
+#### ✅ **Enums** (`com.gomirai.common.enums`)
+- `Role` - User roles (CUSTOMER, DRIVER, ADMIN)
+- `AuthProvider` - Auth providers (LOCAL, GOOGLE, etc.)
+- `ServiceName` - Service names
+
+#### ✅ **Exceptions** (`com.gomirai.common.exception`)
+- `BusinessException`, `UnauthorizedException`, `ForbiddenException`, `NotFoundException`
+- `GlobalExceptionHandler` - Centralized exception handling
+
+#### ✅ **Utils** (`com.gomirai.common.util`)
+- `ValidationUtil` - Input validation (phone, email, password)
+- `DateTimeUtil` - Date/time helpers
+- `StringUtil` - String manipulation
+
+#### ✅ **Constants** (`com.gomirai.common.constant`)
+- `ValidationConstants` - Validation rules & messages
+- `SystemConstants` - System-wide constants
+
+### 2.3. Benefits
+
+- 🎯 **No Code Duplication** - Write once, use everywhere
+- 🔒 **Consistent Security** - Same JWT implementation
+- 📝 **Standardized Responses** - Consistent error formats
+- 🚀 **Faster Development** - No need to rewrite common code
+- 🛠️ **Easy Maintenance** - Update once, affects all services
+
+### 2.4. What You Should NOT Create
+
+**❌ DON'T create these in your new service:**
+- ❌ `JwtService.java`
+- ❌ `JwtAuthenticationFilter.java`
+- ❌ `JwtAuthenticationEntryPoint.java`
+- ❌ `SecurityUtils.java`
+- ❌ `ErrorResponse.java`
+- ❌ `ValidationErrorResponse.java`
+- ❌ `GlobalExceptionHandler.java`
+- ❌ `Role.java` enum
+- ❌ Kafka `BaseEvent.java`
+
+**✅ Instead, use them from common-lib!**
+
+---
+
+## 3. Tạo Service Mới
+
+### 3.1. Example: OrderService
+
+Let's create an OrderService as example.
+
+### 3.2. Spring Initializr Configuration
 
 **Project Settings:**
 - **Project:** Maven
@@ -66,7 +141,7 @@ grep JWT_SECRET .env
 - **Java:** 21
 - **Packaging:** Jar
 - **Group:** com.gomirai
-- **Artifact:** order-service (example)
+- **Artifact:** order-service
 - **Name:** OrderService
 - **Package name:** com.gomirai.order
 
@@ -82,37 +157,31 @@ grep JWT_SECRET .env
 - Lombok
 ```
 
-### 2.2. Cấu Trúc Thư Mục
+### 3.3. Cấu Trúc Thư Mục
 
 ```
 OrderService/
 ├── Dockerfile
-├── pom.xml
+├── pom.xml                    # Will include gomirai-common-lib
 ├── mvnw
 ├── mvnw.cmd
 ├── .mvn/
 └── src/
     ├── main/
     │   ├── java/com/gomirai/order/
-    │   │   ├── OrderServiceApplication.java
+    │   │   ├── OrderServiceApplication.java      # @ComponentScan for common
     │   │   ├── config/
-    │   │   │   ├── SecurityConfig.java
-    │   │   │   ├── KafkaConsumerConfig.java (optional)
-    │   │   │   └── CorsConfig.java (optional - nếu cần custom)
+    │   │   │   └── SecurityConfig.java           # Uses common-lib components
     │   │   ├── controller/
     │   │   │   └── OrderController.java
     │   │   ├── dto/
-    │   │   │   ├── CreateOrderRequest.java
+    │   │   │   ├── CreateOrderRequest.java       # Service-specific only
     │   │   │   ├── UpdateOrderRequest.java
-    │   │   │   ├── OrderResponse.java
-    │   │   │   ├── ErrorResponse.java
-    │   │   │   └── ValidationErrorResponse.java
+    │   │   │   └── OrderResponse.java
+    │   │   │   # ❌ NO ErrorResponse (use common-lib)
+    │   │   │   # ❌ NO ValidationErrorResponse (use common-lib)
     │   │   ├── events/
-    │   │   │   ├── OrderCreatedEvent.java
-    │   │   │   └── PaymentCompletedEvent.java (consume)
-    │   │   ├── exception/
-    │   │   │   ├── GlobalExceptionHandler.java
-    │   │   │   └── OrderNotFoundException.java
+    │   │   │   └── OrderCreatedEvent.java        # Extends common-lib BaseEvent
     │   │   ├── messaging/
     │   │   │   ├── OrderEventsProducer.java
     │   │   │   └── PaymentEventConsumer.java
@@ -121,13 +190,10 @@ OrderService/
     │   │   │   └── OrderStatus.java
     │   │   ├── repository/
     │   │   │   └── OrderRepository.java
-    │   │   ├── security/
-    │   │   │   ├── JwtService.java
-    │   │   │   ├── JwtAuthenticationFilter.java
-    │   │   │   ├── JwtAuthenticationEntryPoint.java
-    │   │   │   └── SecurityUtils.java
+    │   │   │   # ❌ NO security/ folder (use common-lib)
+    │   │   │   # ❌ NO exception/GlobalExceptionHandler (use common-lib)
     │   │   └── service/
-    │   │       └── OrderService.java
+    │   │       └── OrderService.java             # Uses common-lib SecurityUtils
     │   └── resources/
     │       └── application.properties
     └── test/
@@ -135,7 +201,9 @@ OrderService/
             └── OrderServiceApplicationTests.java
 ```
 
-### 2.3. pom.xml
+### 3.4. pom.xml
+
+**⭐ IMPORTANT: Add gomirai-common-lib dependency**
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -161,10 +229,16 @@ OrderService/
     <properties>
         <java.version>21</java.version>
         <spring-cloud.version>2025.0.0</spring-cloud.version>
-        <jjwt.version>0.11.5</jjwt.version>
     </properties>
     
     <dependencies>
+        <!-- ⭐ GOMIRAI COMMON LIBRARY - ADD THIS FIRST! -->
+        <dependency>
+            <groupId>com.gomirai</groupId>
+            <artifactId>gomirai-common-lib</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+        
         <!-- Web -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -183,24 +257,7 @@ OrderService/
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
         
-        <!-- JWT -->
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-api</artifactId>
-            <version>${jjwt.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-impl</artifactId>
-            <version>${jjwt.version}</version>
-            <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.jsonwebtoken</groupId>
-            <artifactId>jjwt-jackson</artifactId>
-            <version>${jjwt.version}</version>
-            <scope>runtime</scope>
-        </dependency>
+        <!-- ❌ NO NEED for JJWT dependencies (already in common-lib) -->
         
         <!-- Validation -->
         <dependency>
@@ -284,230 +341,43 @@ OrderService/
 
 ---
 
-## 3. Security Configuration
+## 4. Configure Security (Using Common Lib)
 
-### 3.1. JwtService.java
+### 4.1. Main Application Class
+
+**⭐ CRITICAL: Add @ComponentScan to include common-lib packages**
 
 ```java
-package com.gomirai.order.security;
+package com.gomirai.order;
 
-import java.nio.charset.StandardCharsets;
-import java.util.Optional;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.kafka.annotation.EnableKafka;
 
-import javax.crypto.SecretKey;
-
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.io.Decoders;
-import io.jsonwebtoken.security.Keys;
-
-@Service
-public class JwtService {
-
-    private final SecretKey key;
-
-    public JwtService(@Value("${security.jwt.secret}") String secret) {
-        // ✅ IMPORTANT: Xử lý key GIỐNG HỆT AuthService
-        byte[] secretBytes = secret.startsWith("BASE64:")
-            ? Decoders.BASE64.decode(secret.substring("BASE64:".length()))
-            : secret.getBytes(StandardCharsets.UTF_8);
-        this.key = Keys.hmacShaKeyFor(secretBytes);
-    }
-
-    public Optional<Claims> parseToken(String token) {
-        try {
-            Claims claims = Jwts.parserBuilder()
-                    .setSigningKey(key)
-                    .build()
-                    .parseClaimsJws(token)
-                    .getBody();
-            return Optional.of(claims);
-        } catch (Exception e) {
-            // Token invalid hoặc expired
-            return Optional.empty();
-        }
+@SpringBootApplication
+@EnableDiscoveryClient
+@EnableKafka  // If using Kafka
+@ComponentScan(basePackages = {
+    "com.gomirai.order",    // Your service package
+    "com.gomirai.common"    // ⭐ Common library package - MUST INCLUDE!
+})
+public class OrderServiceApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(OrderServiceApplication.class, args);
     }
 }
 ```
 
-### 3.2. JwtAuthenticationFilter.java
+**Why @ComponentScan?**
+- Spring needs to scan common-lib packages to register beans
+- Without this, JwtService, SecurityUtils, GlobalExceptionHandler won't be available
+- This enables autowiring of common-lib components
 
-```java
-package com.gomirai.order.security;
+### 4.2. SecurityConfig.java
 
-import java.io.IOException;
-import java.util.Collections;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
-
-import org.springframework.http.HttpHeaders;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.stereotype.Component;
-import org.springframework.util.StringUtils;
-import org.springframework.web.filter.OncePerRequestFilter;
-
-import io.jsonwebtoken.Claims;
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import lombok.extern.slf4j.Slf4j;
-
-@Component
-@Slf4j
-public class JwtAuthenticationFilter extends OncePerRequestFilter {
-
-    private final JwtService jwtService;
-
-    public JwtAuthenticationFilter(JwtService jwtService) {
-        this.jwtService = jwtService;
-    }
-
-    @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
-            throws ServletException, IOException {
-        
-        try {
-            String header = request.getHeader(HttpHeaders.AUTHORIZATION);
-            
-            if (StringUtils.hasText(header) && header.startsWith("Bearer ")) {
-                String token = header.substring(7);
-                Optional<Claims> claimsOpt = jwtService.parseToken(token);
-                
-                if (claimsOpt.isPresent()) {
-                    Claims claims = claimsOpt.get();
-                    String userIdStr = claims.getSubject();
-                    String role = claims.get("role", String.class);
-                    
-                    if (userIdStr != null) {
-                        try {
-                            UUID userId = UUID.fromString(userIdStr);
-                            UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
-                                    userId,
-                                    null,
-                                    role != null ? List.of(new SimpleGrantedAuthority("ROLE_" + role)) 
-                                                 : Collections.emptyList()
-                            );
-                            SecurityContextHolder.getContext().setAuthentication(auth);
-                        } catch (IllegalArgumentException e) {
-                            log.warn("Invalid UUID format in token: {}", userIdStr);
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.error("Cannot authenticate user from token: {}", e.getMessage(), e);
-        }
-        
-        filterChain.doFilter(request, response);
-    }
-}
-```
-
-### 3.3. JwtAuthenticationEntryPoint.java
-
-```java
-package com.gomirai.order.security;
-
-import java.io.IOException;
-
-import org.springframework.http.MediaType;
-import org.springframework.security.core.AuthenticationException;
-import org.springframework.security.web.AuthenticationEntryPoint;
-import org.springframework.stereotype.Component;
-
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-
-@Component
-public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint {
-
-    @Override
-    public void commence(HttpServletRequest request, HttpServletResponse response,
-                        AuthenticationException authException) throws IOException, ServletException {
-        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-        response.getWriter().write("{\"error\":\"Unauthorized\",\"message\":\"Authentication required\"}");
-    }
-}
-```
-
-### 3.4. SecurityUtils.java
-
-```java
-package com.gomirai.order.security;
-
-import java.util.UUID;
-
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.stereotype.Component;
-
-/**
- * Utility class for security operations
- * Use this to validate ownership and authorization
- */
-@Component
-public class SecurityUtils {
-
-    /**
-     * Get current authenticated user ID from JWT token
-     */
-    public UUID getCurrentUserId() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()) {
-            throw new SecurityException("User is not authenticated");
-        }
-        
-        Object principal = authentication.getPrincipal();
-        if (principal instanceof UUID) {
-            return (UUID) principal;
-        }
-        
-        throw new SecurityException("Invalid authentication principal");
-    }
-
-    /**
-     * Validate that current user is the owner of the resource
-     */
-    public void validateOwnership(UUID resourceUserId) {
-        UUID currentUserId = getCurrentUserId();
-        if (!currentUserId.equals(resourceUserId)) {
-            throw new SecurityException("You are not authorized to access this resource");
-        }
-    }
-
-    /**
-     * Check if current user has ADMIN role
-     */
-    public boolean isAdmin() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null) {
-            return false;
-        }
-        return authentication.getAuthorities().stream()
-            .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN"));
-    }
-
-    /**
-     * Validate ownership or admin access
-     */
-    public void validateOwnershipOrAdmin(UUID resourceUserId) {
-        if (!isAdmin()) {
-            validateOwnership(resourceUserId);
-        }
-    }
-}
-```
-
-### 3.5. SecurityConfig.java
+**✅ Use common-lib components - NO custom security classes!**
 
 ```java
 package com.gomirai.order.config;
@@ -524,21 +394,22 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import com.gomirai.order.security.JwtAuthenticationEntryPoint;
-import com.gomirai.order.security.JwtAuthenticationFilter;
+import com.gomirai.common.security.JwtAuthenticationEntryPoint;  // ✅ From common-lib
+import com.gomirai.common.security.JwtAuthenticationFilter;      // ✅ From common-lib
 
 import java.util.Arrays;
 
 @Configuration
 @EnableWebSecurity
-@EnableMethodSecurity(prePostEnabled = true)  // Enable @PreAuthorize
+@EnableMethodSecurity(prePostEnabled = true)
 public class SecurityConfig {
 
-    private final JwtAuthenticationFilter jwtFilter;
-    private final JwtAuthenticationEntryPoint authEntryPoint;
+    private final JwtAuthenticationFilter jwtFilter;                // ✅ Autowired from common-lib
+    private final JwtAuthenticationEntryPoint authEntryPoint;       // ✅ Autowired from common-lib
 
-    public SecurityConfig(JwtAuthenticationFilter jwtFilter, 
-                         JwtAuthenticationEntryPoint authEntryPoint) {
+    public SecurityConfig(
+            JwtAuthenticationFilter jwtFilter,
+            JwtAuthenticationEntryPoint authEntryPoint) {
         this.jwtFilter = jwtFilter;
         this.authEntryPoint = authEntryPoint;
     }
@@ -571,7 +442,6 @@ public class SecurityConfig {
         http.headers(headers -> headers
             .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'"))
             .frameOptions(frame -> frame.deny())
-            .xssProtection(xss -> {})  // XSS Protection deprecated in Spring Security 6.1+
         );
         
         return http.build();
@@ -598,164 +468,36 @@ public class SecurityConfig {
 }
 ```
 
+**📝 Notes:**
+- ❌ No need to create `JwtService`, `JwtAuthenticationFilter`, `JwtAuthenticationEntryPoint`
+- ✅ Just autowire them from common-lib
+- ✅ Spring finds them because of `@ComponentScan`
+
 ---
 
-## 4. Validation & Error Handling
+## 5. Validation & Error Handling (Using Common Lib)
 
-### 4.1. ErrorResponse.java
+### 5.1. Use Common-Lib Error Responses
 
+**❌ DON'T create these:**
 ```java
-package com.gomirai.order.dto;
-
-import java.time.LocalDateTime;
-
-import com.fasterxml.jackson.annotation.JsonFormat;
-
-public class ErrorResponse {
-    
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS")
-    private LocalDateTime timestamp;
-    private int status;
-    private String message;
-
-    public ErrorResponse() {
-        this.timestamp = LocalDateTime.now();
-    }
-
-    public ErrorResponse(int status, String message) {
-        this.timestamp = LocalDateTime.now();
-        this.status = status;
-        this.message = message;
-    }
-
-    // Getters and Setters
-    public LocalDateTime getTimestamp() { return timestamp; }
-    public void setTimestamp(LocalDateTime timestamp) { this.timestamp = timestamp; }
-    public int getStatus() { return status; }
-    public void setStatus(int status) { this.status = status; }
-    public String getMessage() { return message; }
-    public void setMessage(String message) { this.message = message; }
-}
+// ❌ Don't create ErrorResponse.java
+// ❌ Don't create ValidationErrorResponse.java
+// ❌ Don't create GlobalExceptionHandler.java
 ```
 
-### 4.2. ValidationErrorResponse.java
-
+**✅ Instead, use from common-lib:**
 ```java
-package com.gomirai.order.dto;
+import com.gomirai.common.dto.response.ErrorResponse;
+import com.gomirai.common.dto.response.ValidationErrorResponse;
+import com.gomirai.common.dto.response.ApiResponse;
 
-import java.time.LocalDateTime;
-import java.util.Map;
-
-import com.fasterxml.jackson.annotation.JsonFormat;
-
-public class ValidationErrorResponse {
-    
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS")
-    private LocalDateTime timestamp;
-    private int status;
-    private String error;
-    private String message;
-    private Map<String, String> errors;  // Field-level errors
-
-    public ValidationErrorResponse() {
-        this.timestamp = LocalDateTime.now();
-    }
-
-    public ValidationErrorResponse(int status, String error, String message, Map<String, String> errors) {
-        this.timestamp = LocalDateTime.now();
-        this.status = status;
-        this.error = error;
-        this.message = message;
-        this.errors = errors;
-    }
-
-    // Getters and Setters
-    public LocalDateTime getTimestamp() { return timestamp; }
-    public void setTimestamp(LocalDateTime timestamp) { this.timestamp = timestamp; }
-    public int getStatus() { return status; }
-    public void setStatus(int status) { this.status = status; }
-    public String getError() { return error; }
-    public void setError(String error) { this.error = error; }
-    public String getMessage() { return message; }
-    public void setMessage(String message) { this.message = message; }
-    public Map<String, String> getErrors() { return errors; }
-    public void setErrors(Map<String, String> errors) { this.errors = errors; }
-}
+// GlobalExceptionHandler is automatically registered via @ComponentScan!
 ```
 
-### 4.3. GlobalExceptionHandler.java
+### 5.2. Service-Specific DTOs with Validation
 
-```java
-package com.gomirai.order.exception;
-
-import java.util.HashMap;
-import java.util.Map;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.validation.FieldError;
-import org.springframework.web.bind.MethodArgumentNotValidException;
-import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.RestControllerAdvice;
-
-import com.gomirai.order.dto.ErrorResponse;
-import com.gomirai.order.dto.ValidationErrorResponse;
-
-@RestControllerAdvice
-public class GlobalExceptionHandler {
-
-    private static final Logger logger = LoggerFactory.getLogger(GlobalExceptionHandler.class);
-
-    /**
-     * Handle validation errors from @Valid
-     */
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ValidationErrorResponse> handleValidationExceptions(MethodArgumentNotValidException ex) {
-        logger.warn("Validation error occurred: {} errors", ex.getBindingResult().getErrorCount());
-        
-        Map<String, String> fieldErrors = new HashMap<>();
-        ex.getBindingResult().getAllErrors().forEach((error) -> {
-            String fieldName = ((FieldError) error).getField();
-            String errorMessage = error.getDefaultMessage();
-            fieldErrors.put(fieldName, errorMessage);
-            logger.debug("Validation error - {}: {}", fieldName, errorMessage);
-        });
-
-        ValidationErrorResponse error = new ValidationErrorResponse(
-            HttpStatus.BAD_REQUEST.value(),
-            "Validation Error",
-            "Request validation failed. Please check the errors for each field.",
-            fieldErrors
-        );
-        return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
-    }
-
-    @ExceptionHandler(IllegalArgumentException.class)
-    public ResponseEntity<ErrorResponse> handleNotFound(IllegalArgumentException e) {
-        logger.warn("Resource not found: {}", e.getMessage());
-        return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(new ErrorResponse(404, e.getMessage()));
-    }
-
-    @ExceptionHandler(SecurityException.class)
-    public ResponseEntity<ErrorResponse> handleSecurityException(SecurityException e) {
-        logger.warn("Security exception: {}", e.getMessage());
-        return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(new ErrorResponse(403, e.getMessage()));
-    }
-
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponse> handleGenericException(Exception e) {
-        logger.error("Unexpected error: {}", e.getMessage(), e);
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(new ErrorResponse(500, "An unexpected error occurred. Please try again later."));
-    }
-}
-```
-
-### 4.4. Example DTO with Validation
+**Create your service-specific DTOs:**
 
 ```java
 package com.gomirai.order.dto;
@@ -783,7 +525,9 @@ public class CreateOrderRequest {
 }
 ```
 
-### 4.5. Controller with @Valid
+### 5.3. Controller with @Valid
+
+**Validation errors are automatically handled by common-lib GlobalExceptionHandler!**
 
 ```java
 package com.gomirai.order.controller;
@@ -792,44 +536,158 @@ import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import com.gomirai.common.dto.response.ApiResponse;  // ✅ From common-lib
+import com.gomirai.common.security.SecurityUtils;     // ✅ From common-lib
+import com.gomirai.order.dto.CreateOrderRequest;
+import com.gomirai.order.dto.OrderResponse;
+import com.gomirai.order.service.OrderService;
+
 @RestController
 @RequestMapping("/api/orders")
 public class OrderController {
     
+    private final OrderService orderService;
+    private final SecurityUtils securityUtils;  // ✅ Autowired from common-lib
+
+    public OrderController(OrderService orderService, SecurityUtils securityUtils) {
+        this.orderService = orderService;
+        this.securityUtils = securityUtils;
+    }
+    
     @PostMapping
-    public ResponseEntity<OrderResponse> createOrder(@Valid @RequestBody CreateOrderRequest request) {
+    public ResponseEntity<ApiResponse<OrderResponse>> createOrder(@Valid @RequestBody CreateOrderRequest request) {
         // ✅ @Valid triggers validation
-        // If validation fails, GlobalExceptionHandler handles it
-        return ResponseEntity.ok(orderService.createOrder(request));
+        // ✅ If validation fails, common-lib GlobalExceptionHandler handles it
+        // ✅ Returns ValidationErrorResponse automatically
+        
+        UUID currentUserId = securityUtils.getCurrentUserId();  // ✅ From common-lib
+        OrderResponse order = orderService.createOrder(currentUserId, request);
+        return ResponseEntity.ok(ApiResponse.success(order));  // ✅ From common-lib
+    }
+    
+    @GetMapping("/{orderId}")
+    public ResponseEntity<ApiResponse<OrderResponse>> getOrder(@PathVariable UUID orderId) {
+        // ✅ Authorization check using common-lib SecurityUtils
+        OrderResponse order = orderService.getOrder(orderId);
+        securityUtils.validateOwnershipOrAdmin(order.getUserId());  // ✅ From common-lib
+        
+        return ResponseEntity.ok(ApiResponse.success(order));
     }
 }
 ```
 
+### 5.4. Service Layer with Common-Lib Exceptions
+
+```java
+package com.gomirai.order.service;
+
+import org.springframework.stereotype.Service;
+
+import com.gomirai.common.exception.NotFoundException;      // ✅ From common-lib
+import com.gomirai.common.exception.ForbiddenException;     // ✅ From common-lib
+import com.gomirai.common.security.SecurityUtils;           // ✅ From common-lib
+import com.gomirai.order.dto.CreateOrderRequest;
+import com.gomirai.order.dto.OrderResponse;
+import com.gomirai.order.model.Order;
+import com.gomirai.order.repository.OrderRepository;
+
+import lombok.RequiredArgsConstructor;
+
+import java.util.UUID;
+
+@Service
+@RequiredArgsConstructor
+public class OrderService {
+
+    private final OrderRepository orderRepository;
+    private final SecurityUtils securityUtils;  // ✅ Autowired from common-lib
+
+    public OrderResponse createOrder(UUID userId, CreateOrderRequest request) {
+        Order order = new Order();
+        order.setUserId(userId);
+        order.setProductId(request.getProductId());
+        order.setQuantity(request.getQuantity());
+        
+        Order saved = orderRepository.save(order);
+        return OrderResponse.from(saved);
+    }
+
+    public OrderResponse getOrder(UUID orderId) {
+        Order order = orderRepository.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("Order not found: " + orderId));  // ✅ From common-lib
+        
+        // ✅ Common-lib GlobalExceptionHandler converts NotFoundException to 404 response
+        
+        return OrderResponse.from(order);
+    }
+}
+```
+
+**📝 Notes:**
+- ✅ Throw common-lib exceptions (`NotFoundException`, `ForbiddenException`, etc.)
+- ✅ Common-lib `GlobalExceptionHandler` automatically converts them to proper HTTP responses
+- ✅ No need to create custom exception handlers
+
 ---
 
-## 5. Kafka Integration
+## 6. Kafka Integration (Using Common Lib)
 
-### 5.1. Event Definition (Producer)
+### 6.1. Event Definition (Extend BaseEvent)
+
+**✅ Extend common-lib BaseEvent for consistency:**
 
 ```java
 package com.gomirai.order.events;
+
+import com.gomirai.common.dto.event.BaseEvent;  // ✅ From common-lib
 
 import java.util.UUID;
 
 /**
  * Order Created Event
- * Use record for immutability (best practice)
+ * Extends BaseEvent for common fields (id, timestamp, eventType, version)
  */
-public record OrderCreatedEvent(
-    UUID orderId,
-    UUID userId,
-    String status,
-    Double totalAmount,
-    Long createdAt
-) {}
+public class OrderCreatedEvent extends BaseEvent {
+    
+    private UUID orderId;
+    private UUID userId;
+    private String status;
+    private Double totalAmount;
+
+    // Constructors
+    public OrderCreatedEvent() {
+        super();
+        this.setEventType("ORDER_CREATED");
+    }
+
+    public OrderCreatedEvent(UUID orderId, UUID userId, String status, Double totalAmount) {
+        super();
+        this.setEventType("ORDER_CREATED");
+        this.orderId = orderId;
+        this.userId = userId;
+        this.status = status;
+        this.totalAmount = totalAmount;
+    }
+
+    // Getters and Setters
+    public UUID getOrderId() { return orderId; }
+    public void setOrderId(UUID orderId) { this.orderId = orderId; }
+    public UUID getUserId() { return userId; }
+    public void setUserId(UUID userId) { this.userId = userId; }
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
+    public Double getTotalAmount() { return totalAmount; }
+    public void setTotalAmount(Double totalAmount) { this.totalAmount = totalAmount; }
+}
 ```
 
-### 5.2. Event Producer
+**📝 BaseEvent provides:**
+- `id` (UUID) - Event ID
+- `timestamp` (Long) - Event timestamp
+- `eventType` (String) - Event type identifier
+- `version` (String) - Event schema version
+
+### 6.2. Event Producer
 
 ```java
 package com.gomirai.order.messaging;
@@ -857,14 +715,16 @@ public class OrderEventsProducer {
     }
 
     public void sendOrderCreated(OrderCreatedEvent event) {
-        log.info("Sending OrderCreatedEvent: orderId={}, userId={}", 
-            event.orderId(), event.userId());
-        kafkaTemplate.send(orderCreatedTopic, event.orderId().toString(), event);
+        log.info("Sending OrderCreatedEvent: orderId={}, userId={}, timestamp={}", 
+            event.getOrderId(), event.getUserId(), event.getTimestamp());
+        kafkaTemplate.send(orderCreatedTopic, event.getOrderId().toString(), event);
     }
 }
 ```
 
-### 5.3. Event Consumer (if needed)
+### 6.3. Event Consumer
+
+**Consuming common-lib UserRegisteredEvent:**
 
 ```java
 package com.gomirai.order.consumer;
@@ -872,7 +732,7 @@ package com.gomirai.order.consumer;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
-import com.gomirai.order.events.PaymentCompletedEvent;
+import com.gomirai.common.dto.event.UserRegisteredEvent;  // ✅ From common-lib
 import com.gomirai.order.service.OrderService;
 
 import lombok.RequiredArgsConstructor;
@@ -881,37 +741,47 @@ import lombok.extern.slf4j.Slf4j;
 @Component
 @RequiredArgsConstructor
 @Slf4j
-public class PaymentEventConsumer {
+public class UserEventConsumer {
 
     private final OrderService orderService;
 
     @KafkaListener(
-        topics = "${kafka.topic.payment-completed}",
+        topics = "${kafka.topic.user-registered}",
         groupId = "${spring.kafka.consumer.group-id}"
     )
-    public void handlePaymentCompleted(PaymentCompletedEvent event) {
-        log.info("Received PaymentCompletedEvent: orderId={}", event.orderId());
+    public void handleUserRegistered(UserRegisteredEvent event) {  // ✅ From common-lib
+        log.info("Received UserRegisteredEvent: userId={}, phoneNumber={}", 
+            event.getUserId(), event.getPhoneNumber());
         
         try {
-            orderService.updateOrderStatus(event.orderId(), "PAID");
-            log.info("Successfully updated order status for orderId: {}", event.orderId());
+            // Initialize user's order history or settings
+            orderService.initializeUserOrders(event.getUserId());
+            log.info("Successfully initialized orders for user: {}", event.getUserId());
         } catch (Exception e) {
-            log.error("Failed to process payment event for orderId: {}", event.orderId(), e);
+            log.error("Failed to process user registration event: {}", event.getUserId(), e);
             throw e;  // Kafka will retry
         }
     }
 }
 ```
 
+**📝 Notes:**
+- ✅ UserRegisteredEvent is from common-lib (shared across all services)
+- ✅ No need to duplicate event classes
+- ✅ Type-safe event consumption
+
 ---
 
-## 6. Docker Configuration
+## 7. Docker Configuration
 
-### 6.1. Dockerfile
+### 7.1. Dockerfile
 
 ```dockerfile
 FROM eclipse-temurin:21-jdk-alpine AS build
 WORKDIR /app
+
+# Copy common library JAR from local Maven repo
+# This requires gomirai-common-lib to be installed first (mvn install)
 COPY pom.xml .
 COPY mvnw .
 COPY .mvn .mvn
@@ -927,7 +797,7 @@ EXPOSE 8083
 ENTRYPOINT ["java", "-jar", "app.jar"]
 ```
 
-### 6.2. application.properties
+### 7.2. application.properties
 
 ```properties
 spring.application.name=OrderService
@@ -955,16 +825,19 @@ spring.kafka.consumer.key-deserializer=org.apache.kafka.common.serialization.Str
 spring.kafka.consumer.value-deserializer=org.springframework.kafka.support.serializer.JsonDeserializer
 
 # ✅ SECURITY: Whitelist specific packages only
-spring.kafka.consumer.properties.spring.json.trusted.packages=com.gomirai.order.events,com.gomirai.payment.events
+# Include common-lib event packages!
+spring.kafka.consumer.properties.spring.json.trusted.packages=com.gomirai.order.events,com.gomirai.common.dto.event,com.gomirai.payment.events
 spring.kafka.consumer.auto-offset-reset=earliest
 
 # Kafka Topics
 kafka.topic.order-created=order-created-event
 kafka.topic.order-updated=order-updated-event
+kafka.topic.user-registered=user-registered-event
 kafka.topic.payment-completed=payment-completed-event
 
-# JWT Security
+# JWT Security (from common-lib)
 security.jwt.secret=${SECURITY_JWT_SECRET}
+security.jwt.access-ttl-ms=86400000
 
 # ✅ SECURITY: Only expose health endpoint
 management.endpoints.web.exposure.include=health
@@ -973,10 +846,11 @@ management.endpoint.health.show-components=when-authorized
 
 # Logging
 logging.level.com.gomirai.order=INFO
-logging.level.com.gomirai.order.security=DEBUG
+logging.level.com.gomirai.common=INFO
+logging.level.com.gomirai.common.security=DEBUG
 ```
 
-### 6.3. Update docker-compose.yml
+### 7.3. Update docker-compose.yml
 
 ```yaml
 services:
@@ -1009,7 +883,7 @@ services:
     restart: on-failure
 ```
 
-### 6.4. Update .env file
+### 7.4. Update .env file
 
 ```env
 # Existing variables...
@@ -1018,14 +892,14 @@ USER_MONGODB_URI=mongodb://...
 JWT_SECRET=BASE64:your-secret-here
 
 # Add new service
-ORDER_MONGODB_URI=mongodb://user:pass@host/order_db
+ORDER_MONGODB_URI=mongodb://user:pass@mongodb:27017/order_db?authSource=admin
 ```
 
 ---
 
-## 7. Gateway Configuration
+## 8. Gateway Configuration
 
-### 7.1. Update ProxyController.java
+### 8.1. Update ProxyController.java
 
 ```java
 // ApiGateway/src/main/java/com/gomirai/gateway/controller/ProxyController.java
@@ -1076,25 +950,32 @@ private String getServicePathPrefix(String serviceId) {
 
 ---
 
-## 8. Testing & Verification
+## 9. Testing & Verification
 
-### 8.1. Build & Run
+### 9.1. Build & Run
 
 ```bash
-# Build new service
+# ⭐ STEP 1: Build common library first (if modified)
+cd gomirai-common-lib
+mvn clean install
+cd ..
+
+# STEP 2: Build new service
 docker-compose build order-service
 
-# Start all services
+# STEP 3: Start all services
 docker-compose up -d
 
-# View logs
+# STEP 4: View logs
 docker-compose logs -f order-service
 
-# Check if registered with Consul
+# STEP 5: Check if registered with Consul
 curl http://localhost:8500/v1/catalog/services | jq
+
+# Should show: "OrderService": []
 ```
 
-### 8.2. Test Authentication
+### 9.2. Test Authentication
 
 ```bash
 # 1. Login to get JWT token
@@ -1116,7 +997,7 @@ curl -X GET http://localhost:8080/api/orders \
 # Should return 200 OK if JWT is valid
 ```
 
-### 8.3. Test Validation
+### 9.3. Test Validation (Common-Lib GlobalExceptionHandler)
 
 ```bash
 # Test validation errors
@@ -1125,9 +1006,9 @@ curl -X POST http://localhost:8080/api/orders \
   -H "Content-Type: application/json" \
   -d '{}'
 
-# Expected Response:
+# Expected Response (from common-lib GlobalExceptionHandler):
 # {
-#   "timestamp": "2025-11-23T12:00:00.000",
+#   "timestamp": "2025-11-24T12:00:00.000",
 #   "status": 400,
 #   "error": "Validation Error",
 #   "message": "Request validation failed...",
@@ -1138,68 +1019,60 @@ curl -X POST http://localhost:8080/api/orders \
 # }
 ```
 
-### 8.4. Test Kafka Events
+### 9.4. Test Authorization (Common-Lib SecurityUtils)
 
 ```bash
-# Enter Kafka container
-docker exec -it kafka bash
+# Test ownership validation
+curl -X GET http://localhost:8080/api/orders/OTHER_USER_ORDER_ID \
+  -H "Authorization: Bearer YOUR_TOKEN"
 
-# List topics
-kafka-topics --bootstrap-server localhost:9092 --list
-
-# Monitor events
-kafka-console-consumer \
-  --bootstrap-server localhost:9092 \
-  --topic order-created-event \
-  --from-beginning
-
-# Check consumer groups
-kafka-consumer-groups \
-  --bootstrap-server localhost:9092 \
-  --describe \
-  --group order-service-group
+# Expected: 403 Forbidden (from common-lib SecurityUtils)
+# {
+#   "timestamp": "2025-11-24T12:00:00.000",
+#   "status": 403,
+#   "message": "You are not authorized to access this resource"
+# }
 ```
 
-### 8.5. Verify Security
+### 9.5. Verify Common-Lib Components
 
 ```bash
-# Test without JWT - should fail
-curl -X GET http://localhost:8080/api/orders
-# Expected: 401 Unauthorized
+# Check logs to verify common-lib components are loaded
+docker-compose logs order-service | grep "JwtService"
+docker-compose logs order-service | grep "SecurityUtils"
+docker-compose logs order-service | grep "GlobalExceptionHandler"
 
-# Test with invalid JWT - should fail
-curl -X GET http://localhost:8080/api/orders \
-  -H "Authorization: Bearer invalid-token"
-# Expected: 401 Unauthorized
-
-# Test authorization - User A cannot access User B's orders
-curl -X GET http://localhost:8080/api/orders/USER_B_ORDER_ID \
-  -H "Authorization: Bearer USER_A_TOKEN"
-# Expected: 403 Forbidden
+# You should see Spring registering these beans from common-lib
 ```
 
 ---
 
-## 9. Checklist
+## 10. Checklist
 
 ### Pre-Development
 - [ ] Đọc và hiểu kiến trúc hiện tại
+- [ ] Đọc `gomirai-common-lib/README.md`
+- [ ] Build và install common-lib (`mvn clean install`)
 - [ ] Xác định service cần thiết phải có
 - [ ] Design API endpoints
 - [ ] Design database schema
-- [ ] Design Kafka events
+- [ ] Design Kafka events (extend BaseEvent if needed)
 
 ### Development
 - [ ] Tạo Spring Boot project với đúng dependencies
-- [ ] Implement JWT Authentication (JwtService, Filter, EntryPoint)
-- [ ] Implement SecurityUtils cho authorization
-- [ ] Implement SecurityConfig với CORS và security headers
-- [ ] Implement Validation cho tất cả DTOs
-- [ ] Implement GlobalExceptionHandler với ValidationErrorResponse
-- [ ] Implement ErrorResponse và ValidationErrorResponse
-- [ ] Implement Kafka Producer (nếu cần)
-- [ ] Implement Kafka Consumer (nếu cần)
-- [ ] Implement Business Logic
+- [ ] **Add gomirai-common-lib dependency to pom.xml**
+- [ ] **Add @ComponentScan to main class (include com.gomirai.common)**
+- [ ] ✅ **Use common-lib JwtAuthenticationFilter (NO custom filter)**
+- [ ] ✅ **Use common-lib SecurityUtils (NO custom SecurityUtils)**
+- [ ] ✅ **Use common-lib GlobalExceptionHandler (NO custom handler)**
+- [ ] ✅ **Use common-lib ErrorResponse (NO custom error DTO)**
+- [ ] ✅ **Use common-lib exceptions (NotFoundException, ForbiddenException)**
+- [ ] ✅ **Extend common-lib BaseEvent for Kafka events**
+- [ ] ✅ **Use common-lib Role enum (NO custom Role class)**
+- [ ] Implement service-specific DTOs with validation
+- [ ] Implement SecurityConfig (autowire common-lib components)
+- [ ] Implement Kafka Producer/Consumer (use common-lib events)
+- [ ] Implement Business Logic (use common-lib SecurityUtils)
 - [ ] Add proper logging
 - [ ] Write unit tests
 
@@ -1208,40 +1081,42 @@ curl -X GET http://localhost:8080/api/orders/USER_B_ORDER_ID \
 - [ ] Update docker-compose.yml (không expose ports ra ngoài)
 - [ ] Update .env với MongoDB URI
 - [ ] Configure application.properties đầy đủ
-- [ ] Configure Kafka trusted packages (whitelist)
+- [ ] Configure Kafka trusted packages (include com.gomirai.common.dto.event)
 - [ ] Configure Actuator (chỉ health endpoint)
 - [ ] Update Gateway ProxyController (whitelist service)
 
 ### Testing
-- [ ] Test JWT authentication
-- [ ] Test authorization (ownership validation)
-- [ ] Test validation errors
-- [ ] Test Kafka events (nếu có)
+- [ ] Test JWT authentication (common-lib JwtService)
+- [ ] Test authorization (common-lib SecurityUtils)
+- [ ] Test validation errors (common-lib GlobalExceptionHandler)
+- [ ] Test error responses format (common-lib ErrorResponse)
+- [ ] Test Kafka events (common-lib BaseEvent)
 - [ ] Test CORS
-- [ ] Test error responses format
 - [ ] Test health endpoint
 - [ ] Verify service registered với Consul
+- [ ] Verify common-lib beans are loaded (check logs)
 
 ### Security Review
 - [ ] JWT secret từ environment variable
 - [ ] Tất cả endpoints require authentication (trừ health)
-- [ ] Authorization checks cho resource access
+- [ ] Authorization checks using common-lib SecurityUtils
 - [ ] Validation cho tất cả inputs
-- [ ] Error messages không leak sensitive info
+- [ ] Using common-lib exceptions (no sensitive data leak)
 - [ ] CORS properly configured
 - [ ] Security headers enabled
 - [ ] Actuator endpoints secured
-- [ ] Kafka trusted packages whitelisted
+- [ ] Kafka trusted packages include common-lib
 - [ ] Service port không exposed ra ngoài
 
 ### Documentation
 - [ ] Update API documentation
 - [ ] Update Kafka events documentation
 - [ ] Update this guide nếu có thay đổi
+- [ ] Document any new common-lib components (if added)
 
 ---
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 ### Service không start
 
@@ -1253,7 +1128,32 @@ docker-compose logs order-service
 # - Missing JWT_SECRET in .env
 # - Wrong MongoDB URI
 # - Kafka not ready
-# - Port conflict (nếu exposed)
+# - common-lib not installed (run mvn install in gomirai-common-lib)
+# - Missing @ComponentScan for com.gomirai.common
+```
+
+### Common-lib beans not found
+
+```bash
+# Error: "No qualifying bean of type 'com.gomirai.common.security.JwtService'"
+
+# Solution 1: Check @ComponentScan
+@ComponentScan(basePackages = {
+    "com.gomirai.order",
+    "com.gomirai.common"  // ⭐ MUST include this!
+})
+
+# Solution 2: Rebuild common-lib
+cd gomirai-common-lib
+mvn clean install
+cd ..
+
+# Solution 3: Check dependency in pom.xml
+<dependency>
+    <groupId>com.gomirai</groupId>
+    <artifactId>gomirai-common-lib</artifactId>
+    <version>1.0.0</version>
+</dependency>
 ```
 
 ### JWT Authentication fail
@@ -1266,20 +1166,13 @@ docker-compose exec auth-service env | grep JWT_SECRET
 # Should be identical!
 ```
 
-### Kafka Consumer không nhận message
+### Kafka Consumer không nhận message (common-lib events)
 
 ```bash
-# Check consumer group
-kafka-consumer-groups --bootstrap-server localhost:9092 \
-  --describe --group order-service-group
+# Check trusted packages includes common-lib
+spring.kafka.consumer.properties.spring.json.trusted.packages=com.gomirai.order.events,com.gomirai.common.dto.event
 
-# Check if topic exists
-kafka-topics --bootstrap-server localhost:9092 --list
-
-# Check consumer configuration
-# - groupId unique?
-# - topic name correct?
-# - trusted packages include event package?
+# ⭐ Must include: com.gomirai.common.dto.event
 ```
 
 ### Service không register với Consul
@@ -1298,27 +1191,27 @@ curl http://localhost:8500/v1/catalog/services
 
 ```bash
 # Verify:
+# - @ComponentScan includes com.gomirai.common
 # - @Valid annotation in controller
-# - GlobalExceptionHandler có handle MethodArgumentNotValidException
-# - ValidationErrorResponse được return đúng
-```
-
-### CORS errors
-
-```bash
-# Verify SecurityConfig:
-# - corsConfigurationSource() configured
-# - allowedOrigins includes frontend URL
-# - allowedMethods includes needed methods
+# - Common-lib GlobalExceptionHandler is loaded (check logs)
 ```
 
 ---
 
-## 11. Best Practices Summary
+## 12. Best Practices Summary
+
+### Using Common Library ⭐
+1. **Always add dependency** - Include gomirai-common-lib in pom.xml
+2. **Always @ComponentScan** - Scan com.gomirai.common packages
+3. **Never duplicate** - Don't create JwtService, SecurityUtils, GlobalExceptionHandler
+4. **Use common exceptions** - NotFoundException, ForbiddenException, etc.
+5. **Extend BaseEvent** - For all Kafka events
+6. **Use common enums** - Role, AuthProvider, ServiceName
+7. **Include in trusted packages** - com.gomirai.common.dto.event
 
 ### Security ✅
-1. Luôn validate JWT token
-2. Use SecurityUtils để validate ownership
+1. Autowire common-lib JwtAuthenticationFilter
+2. Use common-lib SecurityUtils for authorization
 3. Whitelist services trong Gateway
 4. Không expose backend service ports
 5. Secure actuator endpoints
@@ -1328,22 +1221,17 @@ curl http://localhost:8500/v1/catalog/services
 
 ### Validation ✅
 1. @Valid cho tất cả request DTOs
-2. Clear validation messages
-3. ValidationErrorResponse với field-level errors
-4. Handle all exception types
+2. Use common-lib ValidationUtil for custom validation
+3. Common-lib GlobalExceptionHandler handles all errors
+4. Throw common-lib exceptions
 
 ### Kafka ✅
-1. Whitelist trusted packages (không dùng "*")
-2. Use record classes cho events (immutable)
-3. Unique groupId cho mỗi service
-4. Throw exception để Kafka retry
-5. Log chi tiết events
-
-### Error Handling ✅
-1. GlobalExceptionHandler cho tất cả exceptions
-2. Consistent error response format
-3. Không leak sensitive information
-4. Proper HTTP status codes
+1. Extend common-lib BaseEvent
+2. Use common-lib UserRegisteredEvent (and others)
+3. Whitelist trusted packages (include common-lib)
+4. Unique groupId cho mỗi service
+5. Throw exception để Kafka retry
+6. Log chi tiết events
 
 ### Docker ✅
 1. Multi-stage build
@@ -1357,19 +1245,24 @@ curl http://localhost:8500/v1/catalog/services
 2. Log INFO cho business events
 3. Log ERROR cho exceptions
 4. Log DEBUG cho security (development only)
+5. Log common-lib components loading
 
 ---
 
 **🎉 Hoàn Thành!**
 
 Sau khi follow guide này, bạn sẽ có một service mới:
-- ✅ Secure với JWT authentication
-- ✅ Authorization validation
+- ✅ **Using gomirai-common-lib** - No code duplication
+- ✅ Secure với JWT authentication (common-lib)
+- ✅ Authorization validation (common-lib SecurityUtils)
 - ✅ Proper input validation
-- ✅ Consistent error responses
-- ✅ Kafka integration (nếu cần)
+- ✅ Consistent error responses (common-lib)
+- ✅ Kafka integration (common-lib events)
 - ✅ Docker containerized
 - ✅ Registered với Consul
 - ✅ Routed qua API Gateway
+
+**Key Takeaway:**  
+**Don't reinvent the wheel! Use gomirai-common-lib for all shared components!** 🚀
 
 **Lưu ý:** Luôn test kỹ security trước khi deploy production!

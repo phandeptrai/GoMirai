@@ -3,7 +3,7 @@ package com.gomirai.user.consumer;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
-import com.gomirai.user.events.UserRegisteredEvent;
+import com.gomirai.common.dto.event.UserRegisteredEvent;
 import com.gomirai.user.service.UserProfileService;
 
 import lombok.RequiredArgsConstructor;

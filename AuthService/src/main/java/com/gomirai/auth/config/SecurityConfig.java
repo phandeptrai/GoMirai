@@ -1,5 +1,6 @@
 package com.gomirai.auth.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -14,7 +15,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import com.gomirai.auth.filter.RateLimitingFilter;
-import com.gomirai.auth.security.JwtAuthenticationFilter;
+import com.gomirai.common.security.JwtAuthenticationFilter;
 
 import java.util.Arrays;
 
@@ -23,6 +24,24 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final RateLimitingFilter rateLimitingFilter;
+
+    @Value("${cors.allowed.origins}")
+    private String allowedOrigins;
+
+    @Value("${cors.allowed.methods}")
+    private String allowedMethods;
+
+    @Value("${cors.allowed.headers}")
+    private String allowedHeaders;
+
+    @Value("${cors.exposed.headers}")
+    private String exposedHeaders;
+
+    @Value("${cors.allow.credentials}")
+    private boolean allowCredentials;
+
+    @Value("${cors.max.age}")
+    private long maxAge;
 
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
                          RateLimitingFilter rateLimitingFilter) {
@@ -67,16 +86,20 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList(
-            "http://localhost:3000",
-            "http://localhost:4200",
-            "http://localhost:8080"
-        ));
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(Arrays.asList("*"));
-        configuration.setExposedHeaders(Arrays.asList("Authorization"));
-        configuration.setAllowCredentials(true);
-        configuration.setMaxAge(3600L);
+        
+        // ✅ Read from application.properties - AuthService chỉ cho phép ApiGateway
+        configuration.setAllowedOrigins(Arrays.asList(allowedOrigins.split(",")));
+        configuration.setAllowedMethods(Arrays.asList(allowedMethods.split(",")));
+        
+        if ("*".equals(allowedHeaders)) {
+            configuration.setAllowedHeaders(Arrays.asList("*"));
+        } else {
+            configuration.setAllowedHeaders(Arrays.asList(allowedHeaders.split(",")));
+        }
+        
+        configuration.setExposedHeaders(Arrays.asList(exposedHeaders.split(",")));
+        configuration.setAllowCredentials(allowCredentials);
+        configuration.setMaxAge(maxAge);
         
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
