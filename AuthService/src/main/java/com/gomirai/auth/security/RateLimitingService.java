@@ -29,8 +29,8 @@ public class RateLimitingService {
     }
 
     private Bucket createNewBucket() {
-        // Allow 5 requests per minute (refill 5 tokens every 60 seconds)
-        Bandwidth limit = Bandwidth.classic(5, Refill.intervally(5, Duration.ofMinutes(1)));
+        // Allow 100 requests per minute (refill 100 tokens every 60 seconds)
+        Bandwidth limit = Bandwidth.classic(100, Refill.intervally(100, Duration.ofMinutes(1)));
         return Bucket.builder()
                 .addLimit(limit)
                 .build();
