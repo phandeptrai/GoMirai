@@ -34,10 +34,11 @@ public class ProxyController {
 	private static final Logger logger = LoggerFactory.getLogger(ProxyController.class);
 	
 	private final LoadBalancerClient loadBalancerClient;
-	private final RestTemplate restTemplate = new RestTemplate();
+	private final RestTemplate restTemplate;
 
-	public ProxyController(LoadBalancerClient loadBalancerClient) {
+	public ProxyController(LoadBalancerClient loadBalancerClient, RestTemplate restTemplate) {
 		this.loadBalancerClient = loadBalancerClient;
+		this.restTemplate = restTemplate;
 	}
 
 	@RequestMapping(path = "/api/{serviceId}/**")
@@ -163,6 +164,9 @@ public class ProxyController {
 			case "user":
 			case "users":
 				return "UserService";
+			case "driver":
+			case "drivers":
+				return "DriverService";
 			default:
 				// ✅ SECURITY: Reject unknown services để prevent service discovery attacks
 				throw new IllegalArgumentException("Unknown service: " + serviceId);
@@ -180,6 +184,9 @@ public class ProxyController {
 			case "user":
 			case "users":
 				return "/api/users";
+			case "driver":
+			case "drivers":
+				return "/api/drivers";
 			default:
 				return "/" + serviceId;
 		}

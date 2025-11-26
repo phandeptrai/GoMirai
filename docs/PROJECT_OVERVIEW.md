@@ -277,6 +277,58 @@ GET    /actuator/health     - Health check
 
 ---
 
+### 3.4. DriverService
+
+**Status:** 🚧 In Progress (driver onboarding MVP)  
+**Port:** 8084 (Internal Only)  
+**Database:** MongoDB (driver_db)  
+**Purpose:** Quản lý hồ sơ tài xế, phương tiện và trạng thái hoạt động
+
+**Responsibilities:**
+- Lưu trữ hồ sơ tài xế (license, userId, rating, createdAt)
+- Quản lý thông tin xe (brand/model/plate/type)
+- Quản lý 2 loại trạng thái:
+  - **Account Status:** PENDING_VERIFICATION, ACTIVE, REJECTED, BANNED
+  - **Availability Status:** ONLINE, OFFLINE
+- Cho phép tài xế đăng ký / cập nhật hồ sơ & xe
+- Cho phép tài xế bật/tắt nhận chuyến
+- Cho phép Admin duyệt, từ chối, khóa, mở khóa hồ sơ
+
+**Key Features:**
+- ✅ JWT authentication & filters từ **gomirai-common-lib**
+- ✅ DTO chuẩn hóa với `ApiResponse`
+- ✅ Validation toàn diện (`@Valid`, ValidationUtil)
+- ✅ Business exceptions thống nhất (gomirai-common-lib)
+- ✅ Consul service discovery + Kafka bootstrap sẵn sàng cho events
+
+**Endpoints:**
+```
+POST   /api/drivers/apply                 - Đăng ký làm tài xế
+GET    /api/drivers/me                    - Xem thông tin hồ sơ của chính mình
+PUT    /api/drivers/me                    - Cập nhật thông tin license
+GET    /api/drivers/me/vehicle            - Xem thông tin xe
+PUT    /api/drivers/me/vehicle            - Cập nhật thông tin xe
+PATCH  /api/drivers/me/status/online      - Bật trạng thái nhận chuyến
+PATCH  /api/drivers/me/status/offline     - Tắt trạng thái nhận chuyến
+GET    /api/drivers/{driverId}/rating     - Xem rating của tài xế
+GET    /api/drivers?status=PENDING...     - List tài xế theo trạng thái (Admin)
+PATCH  /api/drivers/{id}/approve          - Duyệt hồ sơ (Admin)
+PATCH  /api/drivers/{id}/reject           - Từ chối hồ sơ (Admin)
+PATCH  /api/drivers/{id}/suspend          - Khóa tài khoản (Admin)
+PATCH  /api/drivers/{id}/unsuspend        - Mở khóa tài khoản (Admin)
+```
+
+**Dependencies:**
+- Spring Boot 3.5.7
+- Spring Security 6
+- MongoDB (driver_db collection `driver_profiles`)
+- Kafka (chuẩn bị cho events driver-online)
+- Jakarta Validation
+- Lombok
+- **gomirai-common-lib 1.0.1**
+
+---
+
 ## 4. Common Library
 
 ### 4.1. gomirai-common-lib
@@ -630,6 +682,23 @@ DELETE http://localhost:8080/api/users/{userId}     # Delete profile (owner only
 GET    http://localhost:8080/api/users              # List all users (admin only)
 ```
 
+**Driver Management:**
+```http
+POST   http://localhost:8080/api/drivers/apply
+GET    http://localhost:8080/api/drivers/me
+PUT    http://localhost:8080/api/drivers/me
+GET    http://localhost:8080/api/drivers/me/vehicle
+PUT    http://localhost:8080/api/drivers/me/vehicle
+PATCH  http://localhost:8080/api/drivers/me/status/online
+PATCH  http://localhost:8080/api/drivers/me/status/offline
+GET    http://localhost:8080/api/drivers/{driverId}/rating
+GET    http://localhost:8080/api/drivers?status=PENDING_VERIFICATION      # Admin
+PATCH  http://localhost:8080/api/drivers/{driverId}/approve               # Admin
+PATCH  http://localhost:8080/api/drivers/{driverId}/reject                # Admin
+PATCH  http://localhost:8080/api/drivers/{driverId}/suspend               # Admin
+PATCH  http://localhost:8080/api/drivers/{driverId}/unsuspend             # Admin
+```
+
 **Authorization Header:**
 ```
 Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
@@ -687,6 +756,35 @@ POST   http://auth-service:8081/auth/validate      # JWT validation (Gateway int
 **Indexes:**
 - `_id` (primary key = userId)
 
+### 9.3. DriverService - driver_db
+
+**Collection: driver_profiles**
+```javascript
+{
+  "_id": UUID("a34d..."),                 // driverId
+  "userId": UUID("550e..."),              // Liên kết với AuthService
+  "licenseNumber": "79C1-123456",
+  "accountStatus": "PENDING_VERIFICATION",
+  "availabilityStatus": "OFFLINE",
+  "rating": 5.0,
+  "vehicle": {
+    "vehicleId": UUID("c12f..."),
+    "brand": "Toyota",
+    "model": "Vios",
+    "plateNumber": "51A-123.45",
+    "type": "CAR_4",
+    "color": "Black",
+    "registrationDate": "2022-01-10"
+  },
+  "createdAt": ISODate("2025-11-25T..."),
+  "updatedAt": ISODate("2025-11-25T...")
+}
+```
+
+**Indexes:**
+- `_id` (driverId)
+- `userId` (unique)
+
 ---
 
 ## 10. Development Progress
@@ -697,7 +795,7 @@ POST   http://auth-service:8081/auth/validate      # JWT validation (Gateway int
 - [x] Docker Compose setup với tất cả services
 - [x] Consul service discovery
 - [x] Kafka message broker
-- [x] MongoDB databases (auth_db, user_db)
+ - [x] MongoDB databases (auth_db, user_db, driver_db)
 - [x] Multi-stage Dockerfile cho mỗi service
 - [x] **Common library (gomirai-common-lib)**
 
@@ -737,6 +835,7 @@ POST   http://auth-service:8081/auth/validate      # JWT validation (Gateway int
 - [x] API Gateway với routing và security
 - [x] AuthService với register/login/validate
 - [x] UserService với CRUD operations
+- [x] DriverService MVP (driver onboarding, vehicle & availability)
 - [x] Kafka integration (producer/consumer với common-lib events)
 - [x] Event-driven user profile creation
 - [x] All services use gomirai-common-lib
@@ -759,6 +858,7 @@ POST   http://auth-service:8081/auth/validate      # JWT validation (Gateway int
 | API Gateway | ✅ Done | 100% |
 | AuthService | ✅ Done | 100% |
 | UserService | ✅ Done | 100% |
+| DriverService | 🚧 Partial | 60% |
 | Security | ✅ Done | 100% |
 | Validation | ✅ Done | 100% |
 | Error Handling | ✅ Done | 100% |
@@ -783,6 +883,7 @@ POST   http://auth-service:8081/auth/validate      # JWT validation (Gateway int
 - [ ] Unit tests cho common-lib components
 - [ ] Unit tests cho AuthService
 - [ ] Unit tests cho UserService
+- [ ] Unit tests cho DriverService (hồ sơ, trạng thái, controller)
 - [ ] Integration tests cho API Gateway
 - [ ] E2E tests cho authentication flow
 - [ ] Load testing cho rate limiting
@@ -867,6 +968,7 @@ JWT_SECRET=BASE64:your-base64-encoded-secret-here
 # MongoDB URIs
 AUTH_MONGODB_URI=mongodb://username:password@mongodb:27017/auth_db?authSource=admin
 USER_MONGODB_URI=mongodb://username:password@mongodb:27017/user_db?authSource=admin
+DRIVER_MONGODB_URI=mongodb://username:password@mongodb:27017/driver_db?authSource=admin
 
 # Consul
 CONSUL_HOST=consul
@@ -883,6 +985,7 @@ KAFKA_BOOTSTRAP_SERVERS=kafka:29092
 | API Gateway | 8080 | 8080 | ✅ Exposed - Frontend access |
 | AuthService | 8081 | ❌ Not exposed | Internal only |
 | UserService | 8082 | ❌ Not exposed | Internal only |
+| DriverService | 8084 | ❌ Not exposed | Internal only |
 | MongoDB | 27017 | 27017 | ✅ Exposed - Development only |
 | Kafka | 29092 (internal) | 9092 (external) | ✅ Exposed - Development only |
 | Consul | 8500 | 8500 | ✅ Exposed - UI access |
@@ -972,7 +1075,7 @@ curl -X POST http://localhost:8080/api/auth/register \
 ### 15.1. TL;DR
 
 **GoMirai** là một microservices system với:
-- ✅ **3 services:** API Gateway, AuthService, UserService
+- ✅ **4 services:** API Gateway, AuthService, UserService, DriverService
 - ✅ **1 common library:** gomirai-common-lib (security, DTOs, utils)
 - ✅ **Security:** JWT authentication, authorization, rate limiting
 - ✅ **Event-Driven:** Kafka-based messaging

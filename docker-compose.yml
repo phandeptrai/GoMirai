@@ -129,6 +129,29 @@ services:
       - gomirai-network
     restart: on-failure
 
+  # Driver Service
+  driver-service:
+    build:
+      context: .  # Build from root to access common-lib
+      dockerfile: DriverService/Dockerfile
+    container_name: driver-service
+    expose:
+      - "8084"
+    depends_on:
+      consul:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_DATA_MONGODB_URI: ${DRIVER_MONGODB_URI}
+      SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    networks:
+      - gomirai-network
+    restart: on-failure
+
 networks:
   gomirai-network:
     driver: bridge
