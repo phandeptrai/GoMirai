@@ -3,7 +3,7 @@ package com.gomirai.driver.dto.response;
 import java.time.LocalDate;
 import java.util.UUID;
 
-import com.gomirai.driver.enums.VehicleType;
+import com.gomirai.common.enums.VehicleType;
 
 public record DriverVehicleResponse(
 	UUID vehicleId,

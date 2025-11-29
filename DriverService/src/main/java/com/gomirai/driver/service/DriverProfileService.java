@@ -6,6 +6,7 @@ import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 
+import com.gomirai.common.dto.event.DriverAvailabilityChangedEvent;
 import com.gomirai.common.exception.BusinessException;
 import com.gomirai.common.exception.NotFoundException;
 import com.gomirai.common.security.SecurityUtils;
@@ -16,8 +17,9 @@ import com.gomirai.driver.dto.response.DriverProfileResponse;
 import com.gomirai.driver.dto.response.DriverRatingResponse;
 import com.gomirai.driver.dto.response.DriverStatusResponse;
 import com.gomirai.driver.dto.response.DriverVehicleResponse;
-import com.gomirai.driver.enums.DriverAccountStatus;
-import com.gomirai.driver.enums.DriverAvailabilityStatus;
+import com.gomirai.common.enums.DriverAccountStatus;
+import com.gomirai.common.enums.DriverAvailabilityStatus;
+import com.gomirai.driver.messaging.DriverAvailabilityEventsProducer;
 import com.gomirai.driver.model.DriverProfile;
 import com.gomirai.driver.model.DriverVehicle;
 import com.gomirai.driver.repository.DriverProfileRepository;
@@ -30,6 +32,7 @@ public class DriverProfileService {
 
 	private final DriverProfileRepository driverProfileRepository;
 	private final SecurityUtils securityUtils;
+	private final DriverAvailabilityEventsProducer availabilityEventsProducer;
 
 	public DriverProfileResponse apply(DriverApplicationRequest request) {
 		UUID userId = securityUtils.getCurrentUserId();
@@ -154,9 +157,20 @@ public class DriverProfileService {
 		if (profile.getAccountStatus() != DriverAccountStatus.ACTIVE) {
 			throw new BusinessException("Chỉ tài khoản đã duyệt mới được thay đổi trạng thái nhận cuốc.");
 		}
-		profile.setAvailabilityStatus(online ? DriverAvailabilityStatus.ONLINE : DriverAvailabilityStatus.OFFLINE);
+		DriverAvailabilityStatus newStatus = online ? DriverAvailabilityStatus.ONLINE : DriverAvailabilityStatus.OFFLINE;
+		profile.setAvailabilityStatus(newStatus);
 		profile.setUpdatedAt(Instant.now());
 		driverProfileRepository.save(profile);
+
+		// Publish availability changed event for TrackingService (event-driven)
+		availabilityEventsProducer.publishAvailabilityChanged(
+			new DriverAvailabilityChangedEvent(
+				profile.getDriverId(),
+				newStatus,
+				profile.getVehicle() != null ? profile.getVehicle().getType() : null
+			)
+		);
+
 		return new DriverStatusResponse(profile.getDriverId(), profile.getAccountStatus(), profile.getAvailabilityStatus());
 	}
 

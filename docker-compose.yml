@@ -152,6 +152,58 @@ services:
       - gomirai-network
     restart: on-failure
 
+  # Tracking Service
+  tracking-service:
+    build:
+      context: .
+      dockerfile: TrackingService/Dockerfile
+    container_name: tracking-service
+    ports:
+      - "8085:8085"
+    depends_on:
+      consul:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      # ✅ Redis local is optional - can use cloud Redis via SPRING_REDIS_URL
+      # Uncomment below if using local Redis:
+      # redis:
+      #   condition: service_healthy
+    environment:
+      # ✅ Using Redis Cloud URL
+      SPRING_REDIS_URL: ${SPRING_REDIS_URL}
+      
+      # ✅ Option 2: Use local Redis (fallback if SPRING_REDIS_URL not set)
+      # SPRING_REDIS_HOST: ${SPRING_REDIS_HOST:redis}
+      # SPRING_REDIS_PORT: ${SPRING_REDIS_PORT:6379}
+      # SPRING_REDIS_PASSWORD: ${SPRING_REDIS_PASSWORD:}
+      # SPRING_REDIS_USERNAME: ${SPRING_REDIS_USERNAME:}
+      # SPRING_REDIS_SSL_ENABLED: ${SPRING_REDIS_SSL_ENABLED:false}
+      
+      SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    networks:
+      - gomirai-network
+    restart: on-failure
+
+  # Redis - For Tracking Service (Local Development)
+  # ✅ DISABLED - Using Redis Cloud instead
+  # Uncomment below if you want to use local Redis container:
+  # redis:
+  #   image: redis:7.2-alpine
+  #   container_name: redis
+  #   ports:
+  #     - "6379:6379"
+  #   networks:
+  #     - gomirai-network
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
 networks:
   gomirai-network:
     driver: bridge

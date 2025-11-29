@@ -24,7 +24,7 @@ import com.gomirai.driver.dto.response.DriverProfileResponse;
 import com.gomirai.driver.dto.response.DriverRatingResponse;
 import com.gomirai.driver.dto.response.DriverStatusResponse;
 import com.gomirai.driver.dto.response.DriverVehicleResponse;
-import com.gomirai.driver.enums.DriverAccountStatus;
+import com.gomirai.common.enums.DriverAccountStatus;
 import com.gomirai.driver.service.DriverProfileService;
 
 import jakarta.validation.Valid;

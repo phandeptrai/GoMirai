@@ -7,8 +7,8 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-import com.gomirai.driver.enums.DriverAccountStatus;
-import com.gomirai.driver.enums.DriverAvailabilityStatus;
+import com.gomirai.common.enums.DriverAccountStatus;
+import com.gomirai.common.enums.DriverAvailabilityStatus;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

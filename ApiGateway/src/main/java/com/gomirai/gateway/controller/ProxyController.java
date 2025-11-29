@@ -167,6 +167,10 @@ public class ProxyController {
 			case "driver":
 			case "drivers":
 				return "DriverService";
+			case "tracking":
+			case "track":
+			case "trackings":
+				return "TrackingService";
 			default:
 				// ✅ SECURITY: Reject unknown services để prevent service discovery attacks
 				throw new IllegalArgumentException("Unknown service: " + serviceId);
@@ -187,6 +191,10 @@ public class ProxyController {
 			case "driver":
 			case "drivers":
 				return "/api/drivers";
+			case "tracking":
+			case "track":
+			case "trackings":
+				return "/api/tracking";
 			default:
 				return "/" + serviceId;
 		}

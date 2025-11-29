@@ -6,7 +6,7 @@ import java.util.UUID;
 
 import org.springframework.data.mongodb.repository.MongoRepository;
 
-import com.gomirai.driver.enums.DriverAccountStatus;
+import com.gomirai.common.enums.DriverAccountStatus;
 import com.gomirai.driver.model.DriverProfile;
 
 public interface DriverProfileRepository extends MongoRepository<DriverProfile, UUID> {

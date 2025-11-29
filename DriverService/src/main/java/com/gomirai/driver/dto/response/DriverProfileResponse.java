@@ -3,8 +3,8 @@ package com.gomirai.driver.dto.response;
 import java.time.Instant;
 import java.util.UUID;
 
-import com.gomirai.driver.enums.DriverAccountStatus;
-import com.gomirai.driver.enums.DriverAvailabilityStatus;
+import com.gomirai.common.enums.DriverAccountStatus;
+import com.gomirai.common.enums.DriverAvailabilityStatus;
 
 public record DriverProfileResponse(
 	UUID driverId,

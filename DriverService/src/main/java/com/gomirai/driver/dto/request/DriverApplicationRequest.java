@@ -1,6 +1,6 @@
 package com.gomirai.driver.dto.request;
 
-import com.gomirai.driver.enums.VehicleType;
+import com.gomirai.common.enums.VehicleType;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;

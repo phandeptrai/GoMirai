@@ -1,17 +1,21 @@
 package com.gomirai.common.exception;
 
+import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import com.gomirai.common.dto.response.ErrorResponse;
 import com.gomirai.common.dto.response.ValidationErrorResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Global Exception Handler for all GoMirai microservices
@@ -121,6 +125,41 @@ public class GlobalExceptionHandler {
         );
         
         return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+    }
+
+    /**
+     * Handle malformed JSON / invalid enum values, etc.
+     * Ví dụ: sai giá trị enum (AVAILABLE thay vì ONLINE/OFFLINE)
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleHttpMessageNotReadable(HttpMessageNotReadableException e) {
+        log.warn("Malformed JSON request: {}", e.getMessage());
+
+        String message = "Invalid request body. Please check your JSON format and field values.";
+
+        Throwable cause = e.getCause();
+        if (cause instanceof InvalidFormatException invalidFormat && invalidFormat.getTargetType().isEnum()) {
+            Object invalidValue = invalidFormat.getValue();
+            Class<?> targetType = invalidFormat.getTargetType();
+
+            String allowedValues = Arrays.stream(targetType.getEnumConstants())
+                    .map(Object::toString)
+                    .collect(Collectors.joining(", "));
+
+            message = String.format(
+                    "Invalid value '%s' for %s. Allowed values are: [%s]",
+                    invalidValue,
+                    targetType.getSimpleName(),
+                    allowedValues
+            );
+        }
+
+        ErrorResponse error = new ErrorResponse(
+                HttpStatus.BAD_REQUEST.value(),
+                "Bad Request",
+                message
+        );
+        return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
     }
 
     /**
