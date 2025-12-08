@@ -171,6 +171,9 @@ public class ProxyController {
 			case "track":
 			case "trackings":
 				return "TrackingService";
+			case "map":
+			case "maps":
+				return "MapService";
 			default:
 				// ✅ SECURITY: Reject unknown services để prevent service discovery attacks
 				throw new IllegalArgumentException("Unknown service: " + serviceId);
@@ -195,6 +198,9 @@ public class ProxyController {
 			case "track":
 			case "trackings":
 				return "/api/tracking";
+			case "map":
+			case "maps":
+				return "/api/map";
 			default:
 				return "/" + serviceId;
 		}

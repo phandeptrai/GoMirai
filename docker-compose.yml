@@ -7,6 +7,9 @@ services:
       - "8500:8500"
       - "8600:8600/udp"
     command: agent -server -ui -bootstrap-expect=1 -client=0.0.0.0
+    environment:
+      # Reduce noisy deprecation warnings in terminal; options: trace|debug|info|warn|error
+      CONSUL_LOG_LEVEL: warn
     networks:
       - gomirai-network
     healthcheck:
@@ -181,6 +184,35 @@ services:
       # SPRING_REDIS_SSL_ENABLED: ${SPRING_REDIS_SSL_ENABLED:false}
       
       SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    networks:
+      - gomirai-network
+    restart: on-failure
+
+  # Map Service
+  map-service:
+    build:
+      context: .  # Build from root to access common-lib
+      dockerfile: MapService/Dockerfile
+    container_name: map-service
+    # ✅ SECURITY: Không expose port ra ngoài, chỉ giao tiếp internal qua API Gateway
+    expose:
+      - "8086"  # Chỉ expose trong internal network
+    depends_on:
+      consul:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      # Mapbox API Token
+      MAPBOX_ACCESS_TOKEN: ${MAPBOX_ACCESS_TOKEN}
+      
+      # Security
+      SECURITY_JWT_SECRET: ${JWT_SECRET}
+      
+      # Infrastructure
       SPRING_CLOUD_CONSUL_HOST: consul
       SPRING_CLOUD_CONSUL_PORT: 8500
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
