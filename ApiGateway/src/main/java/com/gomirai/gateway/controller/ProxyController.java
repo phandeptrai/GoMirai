@@ -82,8 +82,7 @@ public class ProxyController {
 		URI target = URI.create(full);
 
 		HttpMethod method = HttpMethod.valueOf(request.getMethod());
-		HttpHeaders headers = new HttpHeaders();
-		Collections.list(request.getHeaderNames()).forEach(h -> headers.add(h, request.getHeader(h)));
+		HttpHeaders headers = filterRequestHeaders(request);
 		if (headers.getContentType() == null) {
 			headers.setContentType(MediaType.APPLICATION_JSON);
 		}
@@ -125,6 +124,47 @@ public class ProxyController {
 		}
 	}
 
+	/**
+	 * Filter request headers before forwarding to backend services
+	 * Removes browser-specific headers that shouldn't be forwarded (CORS, Origin, etc.)
+	 */
+	private HttpHeaders filterRequestHeaders(HttpServletRequest request) {
+		HttpHeaders filtered = new HttpHeaders();
+		
+		// Headers to skip when forwarding to backend services
+		String[] skipHeaders = {
+			// Browser-specific headers (CORS related)
+			"Origin", "Referer", "User-Agent",
+			// Connection headers
+			"Connection", "Keep-Alive", "Transfer-Encoding",
+			"Proxy-Authenticate", "Proxy-Authorization",
+			"TE", "Trailer", "Upgrade",
+			// Content-Length will be set automatically by RestTemplate
+			"Content-Length",
+			// Host header should be set to target service
+			"Host"
+		};
+		
+		Collections.list(request.getHeaderNames()).forEach(headerName -> {
+			boolean shouldSkip = false;
+			for (String skipHeader : skipHeaders) {
+				if (skipHeader.equalsIgnoreCase(headerName)) {
+					shouldSkip = true;
+					break;
+				}
+			}
+			if (!shouldSkip) {
+				Collections.list(request.getHeaders(headerName))
+					.forEach(value -> filtered.add(headerName, value));
+			}
+		});
+		
+		return filtered;
+	}
+
+	/**
+	 * Filter response headers before sending back to frontend
+	 */
 	private HttpHeaders filterHeaders(HttpHeaders originalHeaders) {
 		HttpHeaders filtered = new HttpHeaders();
 		if (originalHeaders == null) {

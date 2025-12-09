@@ -18,6 +18,7 @@ import com.gomirai.common.security.JwtAuthenticationFilter;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Configuration
 @EnableWebSecurity
@@ -71,6 +72,9 @@ public class SecurityConfig {
                 .requestMatchers("/actuator/health").permitAll()  // Only health endpoint
                 .requestMatchers("/health/**").permitAll()  // Service health checks
                 
+                // CORS preflight requests - phải permit để CORS hoạt động
+                .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                
                 // Auth endpoints - không cần JWT
                 .requestMatchers(HttpMethod.POST, "/api/auth/register").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
@@ -96,17 +100,38 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         
-        // ✅ Read from application.properties - ApiGateway chỉ cho phép Angular frontend
-        configuration.setAllowedOrigins(Arrays.asList(allowedOrigins.split(",")));
-        configuration.setAllowedMethods(Arrays.asList(allowedMethods.split(",")));
+        // ✅ FIX: Trim whitespace từ mỗi origin để tránh CORS mismatch (403 Forbidden)
+        List<String> origins = Arrays.stream(allowedOrigins.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toList());
+        configuration.setAllowedOrigins(origins);
+        
+        // ✅ FIX: Trim whitespace từ methods
+        List<String> methods = Arrays.stream(allowedMethods.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toList());
+        configuration.setAllowedMethods(methods);
         
         if ("*".equals(allowedHeaders)) {
             configuration.setAllowedHeaders(Arrays.asList("*"));
         } else {
-            configuration.setAllowedHeaders(Arrays.asList(allowedHeaders.split(",")));
+            // ✅ FIX: Trim whitespace từ headers
+            List<String> headers = Arrays.stream(allowedHeaders.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .collect(Collectors.toList());
+            configuration.setAllowedHeaders(headers);
         }
         
-        configuration.setExposedHeaders(Arrays.asList(exposedHeaders.split(",")));
+        // ✅ FIX: Trim whitespace từ exposed headers
+        List<String> exposed = Arrays.stream(exposedHeaders.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toList());
+        configuration.setExposedHeaders(exposed);
+        
         configuration.setAllowCredentials(allowCredentials);
         configuration.setMaxAge(maxAge);
         
