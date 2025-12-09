@@ -16,3 +16,5 @@ public class ReverseGeocodeRequest {
     private GeoPoint location;
 }
 
+
+

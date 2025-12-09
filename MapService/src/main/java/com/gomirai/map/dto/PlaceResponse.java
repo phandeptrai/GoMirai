@@ -16,3 +16,5 @@ public class PlaceResponse {
     private String type;               // place, poi, address, etc.
 }
 
+
+

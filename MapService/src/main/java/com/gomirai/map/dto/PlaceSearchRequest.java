@@ -22,3 +22,5 @@ public class PlaceSearchRequest {
     private String proximity; // Format: "longitude,latitude" (optional)
 }
 
+
+

@@ -57,32 +57,44 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     String userIdStr = claims.getSubject();
                     String role = claims.get("role", String.class);
                     
+                    log.debug("JWT parsed - userId: {}, role: {}", userIdStr, role);
+                    
                     if (StringUtils.hasText(userIdStr) && StringUtils.hasText(role)) {
                         try {
                             UUID userId = UUID.fromString(userIdStr);
+                            
+                            String authority = "ROLE_" + role;
+                            log.debug("Creating authority: {}", authority);
                             
                             // Create authentication token with role
                             UsernamePasswordAuthenticationToken authentication =
                                 new UsernamePasswordAuthenticationToken(
                                     userId,
                                     null,
-                                    List.of(new SimpleGrantedAuthority("ROLE_" + role))
+                                    List.of(new SimpleGrantedAuthority(authority))
                                 );
                             
                             // Set authentication in Security Context
                             SecurityContextHolder.getContext().setAuthentication(authentication);
                             
-                            log.debug("JWT authentication successful for user: {}, role: {}", userId, role);
+                            log.info("JWT authentication successful for user: {}, role: {}, authority: {}", 
+                                userId, role, authority);
                         } catch (IllegalArgumentException e) {
                             log.warn("Invalid UUID format in JWT token: {}", userIdStr);
                         }
+                    } else {
+                        log.warn("JWT token missing userId or role - userId: {}, role: {}", userIdStr, role);
                     }
+                } else {
+                    log.warn("Failed to parse JWT token from request: {}", request.getRequestURI());
                 }
+            } else {
+                log.debug("No Authorization header found for request: {}", request.getRequestURI());
             }
         } catch (Exception e) {
             // Log error but don't throw - let request continue as unauthenticated
             // SecurityConfig will handle returning 401 for protected endpoints
-            log.error("JWT authentication error: {}", e.getMessage());
+            log.error("JWT authentication error: {}", e.getMessage(), e);
         }
         
         // Continue filter chain

@@ -20,3 +20,5 @@ public class GeoPoint {
     private Double longitude;
 }
 
+
+
