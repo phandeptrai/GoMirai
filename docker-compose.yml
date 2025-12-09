@@ -204,6 +204,31 @@ services:
   #     timeout: 5s
   #     retries: 5
 
+  # Pricing Service
+  pricing-service:
+    build:
+      context: .
+      dockerfile: PricingService/Dockerfile
+    container_name: pricing-service
+    ports:
+      - "8086:8086"                              # internal only
+    depends_on:
+      consul:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_DATA_MONGODB_URI: ${PRICING_MONGODB_URI}
+      SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SERVER_PORT: 8086
+      SPRING_PROFILES_ACTIVE: dev
+    networks:
+      - gomirai-network
+    restart: on-failure
+
 networks:
   gomirai-network:
     driver: bridge
