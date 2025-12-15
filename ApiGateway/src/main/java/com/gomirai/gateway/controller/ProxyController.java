@@ -129,25 +129,26 @@ public class ProxyController {
 
 	/**
 	 * Filter request headers before forwarding to backend services
-	 * Removes browser-specific headers that shouldn't be forwarded (CORS, Origin, etc.)
+	 * Removes browser-specific headers that shouldn't be forwarded (CORS, Origin,
+	 * etc.)
 	 */
 	private HttpHeaders filterRequestHeaders(HttpServletRequest request) {
 		HttpHeaders filtered = new HttpHeaders();
-		
+
 		// Headers to skip when forwarding to backend services
 		String[] skipHeaders = {
-			// Browser-specific headers (CORS related)
-			"Origin", "Referer", "User-Agent",
-			// Connection headers
-			"Connection", "Keep-Alive", "Transfer-Encoding",
-			"Proxy-Authenticate", "Proxy-Authorization",
-			"TE", "Trailer", "Upgrade",
-			// Content-Length will be set automatically by RestTemplate
-			"Content-Length",
-			// Host header should be set to target service
-			"Host"
+				// Browser-specific headers (CORS related)
+				"Origin", "Referer", "User-Agent",
+				// Connection headers
+				"Connection", "Keep-Alive", "Transfer-Encoding",
+				"Proxy-Authenticate", "Proxy-Authorization",
+				"TE", "Trailer", "Upgrade",
+				// Content-Length will be set automatically by RestTemplate
+				"Content-Length",
+				// Host header should be set to target service
+				"Host"
 		};
-		
+
 		Collections.list(request.getHeaderNames()).forEach(headerName -> {
 			boolean shouldSkip = false;
 			for (String skipHeader : skipHeaders) {
@@ -158,10 +159,10 @@ public class ProxyController {
 			}
 			if (!shouldSkip) {
 				Collections.list(request.getHeaders(headerName))
-					.forEach(value -> filtered.add(headerName, value));
+						.forEach(value -> filtered.add(headerName, value));
 			}
 		});
-		
+
 		return filtered;
 	}
 
@@ -220,7 +221,10 @@ public class ProxyController {
 			case "pricing":
 			case "price":
 				return "PricingService";
-
+			// BỔ SUNG CHO REVIEW SERVICE
+			case "review":
+			case "reviews":
+				return "ReviewService";
 			default:
 				// ✅ SECURITY: Reject unknown services để prevent service discovery attacks
 				throw new IllegalArgumentException("Unknown service: " + serviceId);
@@ -251,6 +255,10 @@ public class ProxyController {
 			case "pricing":
 			case "price":
 				return "/api/pricing";
+			// BỔ SUNG CHO REVIEW SERVICE
+			case "review":
+			case "reviews":
+				return "/api/review";
 			default:
 				return "/" + serviceId;
 		}

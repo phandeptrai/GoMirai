@@ -261,6 +261,31 @@ services:
       - gomirai-network
     restart: on-failure
 
+# Review Service
+  review-service:
+    build:
+      context: .
+      dockerfile: ReviewService/Dockerfile
+    container_name: review-service
+    ports:
+      - "8088:8088" # Chỉ expose trong internal network
+    depends_on:
+      consul:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_DATA_MONGODB_URI: ${REVIEW_MONGODB_URI}
+      SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SERVER_PORT: 8088
+      SPRING_PROFILES_ACTIVE: dev
+    networks:
+      - gomirai-network
+    restart: on-failure
+
 networks:
   gomirai-network:
     driver: bridge
