@@ -79,6 +79,9 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/auth/register").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                 
+                // Pricing estimate endpoint - public để tính giá
+                .requestMatchers(HttpMethod.POST, "/api/pricing/estimate").permitAll()
+                
                 // Tất cả các requests khác cần authentication
                 .anyRequest().authenticated()
             )

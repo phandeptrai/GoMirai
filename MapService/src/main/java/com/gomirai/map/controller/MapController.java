@@ -22,9 +22,9 @@ public class MapController {
     /**
      * Calculate route between two points
      * POST /api/map/directions
+     * Public endpoint - no authentication required
      */
     @PostMapping("/directions")
-    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<RouteResponse> getDirections(@RequestBody @Valid RouteRequest request) {
         log.info("Calculating route from {} to {}", request.getOrigin(), request.getDestination());
         RouteResponse response = mapboxService.getDirections(request);

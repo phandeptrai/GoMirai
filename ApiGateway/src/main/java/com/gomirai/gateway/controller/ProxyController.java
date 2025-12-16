@@ -217,14 +217,17 @@ public class ProxyController {
 			case "map":
 			case "maps":
 				return "MapService";
-			case "pricing":
-			case "price":
-				return "PricingService";
+		case "pricing":
+		case "price":
+			return "PricingService";
+		case "booking":
+		case "bookings":
+			return "BookingService";
 
-			default:
-				// ✅ SECURITY: Reject unknown services để prevent service discovery attacks
-				throw new IllegalArgumentException("Unknown service: " + serviceId);
-		}
+		default:
+			// ✅ SECURITY: Reject unknown services để prevent service discovery attacks
+			throw new IllegalArgumentException("Unknown service: " + serviceId);
+	}
 	}
 
 	private String getServicePathPrefix(String serviceId) {
@@ -248,11 +251,14 @@ public class ProxyController {
 			case "map":
 			case "maps":
 				return "/api/map";
-			case "pricing":
-			case "price":
-				return "/api/pricing";
-			default:
-				return "/" + serviceId;
-		}
+		case "pricing":
+		case "price":
+			return "/api/pricing";
+		case "booking":
+		case "bookings":
+			return "/api/booking";
+		default:
+			return "/" + serviceId;
+	}
 	}
 }

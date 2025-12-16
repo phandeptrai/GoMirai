@@ -41,7 +41,7 @@ public class MapboxService {
                     .buildAndExpand(request.getProfile(), formatCoordinates(request.getOrigin(), request.getDestination()))
                     .toUriString();
 
-            url += "?access_token=" + accessToken + "&geometries=geojson&steps=true";
+            url += "?access_token=" + accessToken + "&geometries=geojson&steps=true&language=vi";
 
             log.debug("Calling Mapbox Directions API: {}", url.replace(accessToken, "***"));
 

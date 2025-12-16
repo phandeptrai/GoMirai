@@ -181,6 +181,16 @@ public class DriverProfileService {
 		return profile;
 	}
 
+	/**
+	 * Get driverId from userId
+	 * Used to map between userId (from JWT) and driverId (in DriverService)
+	 */
+	public UUID getDriverIdByUserId(UUID userId) {
+		return driverProfileRepository.findByUserId(userId)
+			.map(DriverProfile::getDriverId)
+			.orElse(null);
+	}
+
 	private DriverProfile getRequiredProfile(UUID driverId) {
 		return driverProfileRepository.findById(driverId)
 			.orElseThrow(() -> new NotFoundException("Không tìm thấy tài xế: " + driverId));

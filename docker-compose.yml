@@ -155,6 +155,29 @@ services:
       - gomirai-network
     restart: on-failure
 
+  # Payment Service
+  payment-service:
+    build:
+      context: .  # Build from root to access common-lib
+      dockerfile: PaymentSerivce/Dockerfile
+    container_name: payment-service
+    expose:
+      - "8083"  # Internal only
+    depends_on:
+      consul:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_DATA_MONGODB_URI: ${PAYMENT_MONGODB_URI}
+      SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    networks:
+      - gomirai-network
+    restart: on-failure
+
   # Tracking Service
   tracking-service:
     build:
@@ -257,6 +280,30 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SERVER_PORT: 8087
       SPRING_PROFILES_ACTIVE: dev
+    networks:
+      - gomirai-network
+    restart: on-failure
+
+  # Booking Service
+  booking-service:
+    build:
+      context: .
+      dockerfile: BookingService/Dockerfile
+    container_name: booking-service
+    expose:
+      - "8088"  # Chỉ expose trong internal network
+    depends_on:
+      consul:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_DATA_MONGODB_URI: ${BOOKING_MONGODB_URI}
+      SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SERVER_PORT: 8088
     networks:
       - gomirai-network
     restart: on-failure

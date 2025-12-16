@@ -1,0 +1,35 @@
+package com.gomirai.tracking.messaging;
+
+import com.gomirai.common.dto.event.DriverBookingOfferEvent;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.stereotype.Component;
+
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class DriverBookingEventsProducer {
+    
+    private final KafkaTemplate<String, Object> kafkaTemplate;
+    
+    @Value("${kafka.topic.driver-booking-offer:driver.booking.offer}")
+    private String driverBookingOfferTopic;
+    
+    public void publishDriverBookingOffer(DriverBookingOfferEvent event) {
+        try {
+            kafkaTemplate.send(driverBookingOfferTopic, event.getDriverId().toString(), event);
+            log.info("Published DriverBookingOfferEvent: bookingId={}, driverId={}", 
+                event.getBookingId(), event.getDriverId());
+        } catch (Exception e) {
+            log.error("Failed to publish DriverBookingOfferEvent for bookingId={}, driverId={}", 
+                event.getBookingId(), event.getDriverId(), e);
+        }
+    }
+}
+
+
+
+
+

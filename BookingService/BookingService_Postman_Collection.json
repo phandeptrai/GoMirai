@@ -1,0 +1,794 @@
+{
+	"info": {
+		"_postman_id": "booking-service-collection",
+		"name": "Booking Service API",
+		"description": "Collection để test các API của Booking Service",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "1. Create Booking",
+			"item": [
+				{
+					"name": "Create Booking - Success",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}",
+								"description": "JWT token với ROLE_CUSTOMER"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"pickupLocation\": {\n    \"fullAddress\": \"123 Nguyễn Văn A, Quận 1, TP.HCM\",\n    \"latitude\": 10.7769,\n    \"longitude\": 106.7009\n  },\n  \"dropoffLocation\": {\n    \"fullAddress\": \"456 Lê Lợi, Quận 1, TP.HCM\",\n    \"latitude\": 10.7720,\n    \"longitude\": 106.6980\n  },\n  \"vehicleType\": \"MOTORBIKE\",\n  \"paymentMethod\": \"CASH\",\n  \"notes\": \"Xin chào\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/booking",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Booking - CAR_4",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"pickupLocation\": {\n    \"fullAddress\": \"123 Nguyễn Văn A, Quận 1, TP.HCM\",\n    \"latitude\": 10.7769,\n    \"longitude\": 106.7009\n  },\n  \"dropoffLocation\": {\n    \"fullAddress\": \"456 Lê Lợi, Quận 1, TP.HCM\",\n    \"latitude\": 10.7720,\n    \"longitude\": 106.6980\n  },\n  \"vehicleType\": \"CAR_4\",\n  \"paymentMethod\": \"WALLET\",\n  \"notes\": \"Cần xe 4 chỗ\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/booking",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Booking - Missing pickupLocation",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"dropoffLocation\": {\n    \"fullAddress\": \"456 Lê Lợi, Quận 1, TP.HCM\",\n    \"latitude\": 10.7720,\n    \"longitude\": 106.6980\n  },\n  \"vehicleType\": \"MOTORBIKE\",\n  \"paymentMethod\": \"CASH\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/booking",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Booking - Invalid latitude",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"pickupLocation\": {\n    \"fullAddress\": \"123 Nguyễn Văn A, Quận 1, TP.HCM\",\n    \"latitude\": 100,\n    \"longitude\": 106.7009\n  },\n  \"dropoffLocation\": {\n    \"fullAddress\": \"456 Lê Lợi, Quận 1, TP.HCM\",\n    \"latitude\": 10.7720,\n    \"longitude\": 106.6980\n  },\n  \"vehicleType\": \"MOTORBIKE\",\n  \"paymentMethod\": \"CASH\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/booking",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Booking - Missing vehicleType",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"pickupLocation\": {\n    \"fullAddress\": \"123 Nguyễn Văn A, Quận 1, TP.HCM\",\n    \"latitude\": 10.7769,\n    \"longitude\": 106.7009\n  },\n  \"dropoffLocation\": {\n    \"fullAddress\": \"456 Lê Lợi, Quận 1, TP.HCM\",\n    \"latitude\": 10.7720,\n    \"longitude\": 106.6980\n  },\n  \"paymentMethod\": \"CASH\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/booking",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Booking - Notes too long",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"pickupLocation\": {\n    \"fullAddress\": \"123 Nguyễn Văn A, Quận 1, TP.HCM\",\n    \"latitude\": 10.7769,\n    \"longitude\": 106.7009\n  },\n  \"dropoffLocation\": {\n    \"fullAddress\": \"456 Lê Lợi, Quận 1, TP.HCM\",\n    \"latitude\": 10.7720,\n    \"longitude\": 106.6980\n  },\n  \"vehicleType\": \"MOTORBIKE\",\n  \"paymentMethod\": \"CASH\",\n  \"notes\": \"Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum. Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium.\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/booking",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create Booking - Unauthorized",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"pickupLocation\": {\n    \"fullAddress\": \"123 Nguyễn Văn A, Quận 1, TP.HCM\",\n    \"latitude\": 10.7769,\n    \"longitude\": 106.7009\n  },\n  \"dropoffLocation\": {\n    \"fullAddress\": \"456 Lê Lợi, Quận 1, TP.HCM\",\n    \"latitude\": 10.7720,\n    \"longitude\": 106.6980\n  },\n  \"vehicleType\": \"MOTORBIKE\",\n  \"paymentMethod\": \"CASH\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/booking",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "2. Get Booking",
+			"item": [
+				{
+					"name": "Get Booking by ID - Success",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/booking/{{bookingId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking", "{{bookingId}}"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Booking - Unauthorized",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/booking/{{bookingId}}",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking", "{{bookingId}}"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Booking - Not Found",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/booking/00000000-0000-0000-0000-000000000000",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking", "00000000-0000-0000-0000-000000000000"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "3. Get Customer Bookings",
+			"item": [
+				{
+					"name": "Get Customer Bookings - All",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/booking/me?page=0&size=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking", "me"],
+							"query": [
+								{
+									"key": "page",
+									"value": "0"
+								},
+								{
+									"key": "size",
+									"value": "10"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Customer Bookings - Filter by Status",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/booking/me?status=PENDING&page=0&size=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking", "me"],
+							"query": [
+								{
+									"key": "status",
+									"value": "PENDING"
+								},
+								{
+									"key": "page",
+									"value": "0"
+								},
+								{
+									"key": "size",
+									"value": "10"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Customer Bookings - COMPLETED",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/booking/me?status=COMPLETED&page=0&size=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking", "me"],
+							"query": [
+								{
+									"key": "status",
+									"value": "COMPLETED"
+								},
+								{
+									"key": "page",
+									"value": "0"
+								},
+								{
+									"key": "size",
+									"value": "10"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Customer Bookings - Unauthorized",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/booking/me",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking", "me"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "4. Get Driver Bookings",
+			"item": [
+				{
+					"name": "Get Driver Bookings - All",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}",
+								"description": "JWT token với ROLE_DRIVER"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/booking/driver/me?page=0&size=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking", "driver", "me"],
+							"query": [
+								{
+									"key": "page",
+									"value": "0"
+								},
+								{
+									"key": "size",
+									"value": "10"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Driver Bookings - Filter by MATCHED",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							}
+						],
+						"url": {
+							"raw": "{{baseUrl}}/api/booking/driver/me?status=MATCHED&page=0&size=10",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking", "driver", "me"],
+							"query": [
+								{
+									"key": "status",
+									"value": "MATCHED"
+								},
+								{
+									"key": "page",
+									"value": "0"
+								},
+								{
+									"key": "size",
+									"value": "10"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Driver Bookings - Unauthorized",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/api/booking/driver/me",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking", "driver", "me"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "5. Cancel Booking",
+			"item": [
+				{
+					"name": "Cancel Booking - Success",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"Thay đổi kế hoạch\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/booking/{{bookingId}}/cancel",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking", "{{bookingId}}", "cancel"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Cancel Booking - Missing reason",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/booking/{{bookingId}}/cancel",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking", "{{bookingId}}", "cancel"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Cancel Booking - Empty reason",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/booking/{{bookingId}}/cancel",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking", "{{bookingId}}", "cancel"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Cancel Booking - Invalid Status (COMPLETED)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"Thay đổi kế hoạch\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/booking/{{completedBookingId}}/cancel",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking", "{{completedBookingId}}", "cancel"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Cancel Booking - Unauthorized",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"reason\": \"Thay đổi kế hoạch\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/booking/{{bookingId}}/cancel",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking", "{{bookingId}}", "cancel"]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "6. Complete Booking",
+			"item": [
+				{
+					"name": "Complete Booking - Success (Customer)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"actualDistanceKm\": 5.8,\n  \"actualDurationMinutes\": 22\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/booking/{{bookingId}}/complete",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking", "{{bookingId}}", "complete"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Complete Booking - Success (Driver)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{driverToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"actualDistanceKm\": 5.8,\n  \"actualDurationMinutes\": 22\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/booking/{{bookingId}}/complete",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking", "{{bookingId}}", "complete"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Complete Booking - Missing actualDistanceKm",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"actualDurationMinutes\": 22\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/booking/{{bookingId}}/complete",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking", "{{bookingId}}", "complete"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Complete Booking - Invalid distance (negative)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"actualDistanceKm\": -5,\n  \"actualDurationMinutes\": 22\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/booking/{{bookingId}}/complete",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking", "{{bookingId}}", "complete"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Complete Booking - Invalid distance (zero)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"actualDistanceKm\": 0,\n  \"actualDurationMinutes\": 22\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/booking/{{bookingId}}/complete",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking", "{{bookingId}}", "complete"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Complete Booking - Invalid Status (PENDING)",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							},
+							{
+								"key": "Authorization",
+								"value": "Bearer {{customerToken}}"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"actualDistanceKm\": 5.8,\n  \"actualDurationMinutes\": 22\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/booking/{{pendingBookingId}}/complete",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking", "{{pendingBookingId}}", "complete"]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Complete Booking - Unauthorized",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"actualDistanceKm\": 5.8,\n  \"actualDurationMinutes\": 22\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/api/booking/{{bookingId}}/complete",
+							"host": ["{{baseUrl}}"],
+							"path": ["api", "booking", "{{bookingId}}", "complete"]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8083",
+			"type": "string"
+		},
+		{
+			"key": "customerToken",
+			"value": "",
+			"type": "string",
+			"description": "JWT token với ROLE_CUSTOMER"
+		},
+		{
+			"key": "driverToken",
+			"value": "",
+			"type": "string",
+			"description": "JWT token với ROLE_DRIVER"
+		},
+		{
+			"key": "bookingId",
+			"value": "",
+			"type": "string",
+			"description": "UUID của booking (lấy từ response khi tạo booking)"
+		},
+		{
+			"key": "pendingBookingId",
+			"value": "",
+			"type": "string",
+			"description": "UUID của booking có status PENDING"
+		},
+		{
+			"key": "completedBookingId",
+			"value": "",
+			"type": "string",
+			"description": "UUID của booking đã COMPLETED"
+		}
+	]
+}
+
+
+
+
+
+

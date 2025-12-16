@@ -58,8 +58,9 @@ public class SecurityConfig {
 			.cors(cors -> cors.configurationSource(corsConfigurationSource())) // ✅ CORS Config
 			.exceptionHandling(ex -> ex.authenticationEntryPoint(authEntryPoint))
 			.authorizeHttpRequests(auth -> auth
-				.requestMatchers("/actuator/health").permitAll() // Public health check
-				.anyRequest().authenticated()                    // Tất cả request khác cần JWT
+				.requestMatchers("/actuator/health").permitAll()           // Public health check
+				.requestMatchers("/api/map/directions").permitAll()       // Public directions endpoint
+				.anyRequest().authenticated()                              // Tất cả request khác cần JWT
 			)
 			.addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
@@ -94,6 +95,9 @@ public class SecurityConfig {
 		return source;
 	}
 }
+
+
+
 
 
 

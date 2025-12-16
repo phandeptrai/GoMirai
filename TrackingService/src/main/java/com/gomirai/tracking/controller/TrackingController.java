@@ -1,5 +1,6 @@
 package com.gomirai.tracking.controller;
 
+import com.gomirai.common.security.SecurityUtils;
 import com.gomirai.tracking.dto.DriverLocationResponse;
 import com.gomirai.tracking.dto.NearbyDriverRequest;
 import com.gomirai.tracking.model.DriverGeoState;
@@ -19,6 +20,7 @@ import java.util.Map;
 public class TrackingController {
 
     private final TrackingService trackingService;
+    private final SecurityUtils securityUtils;
 
     /**
      * Cập nhật vị trí realtime - chỉ tài xế DRIVER mới được gọi.
@@ -47,6 +49,22 @@ public class TrackingController {
     @GetMapping("/drivers/{driverId}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> getDriverLocation(@PathVariable String driverId) {
+        DriverGeoState state = trackingService.getDriverLocation(driverId);
+        if (state == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(state);
+    }
+
+    /**
+     * Lấy vị trí hiện tại của chính driver - chỉ DRIVER.
+     * Driver chỉ có thể lấy location của chính mình.
+     */
+    @GetMapping("/me")
+    @PreAuthorize("hasRole('DRIVER')")
+    public ResponseEntity<?> getMyLocation() {
+        // Get current driver ID from SecurityContext
+        String driverId = securityUtils.getCurrentUserId().toString();
         DriverGeoState state = trackingService.getDriverLocation(driverId);
         if (state == null) {
             return ResponseEntity.notFound().build();
