@@ -266,7 +266,7 @@ services:
       dockerfile: PricingService/Dockerfile
     container_name: pricing-service
     expose:
-      - "8087"  # Chỉ expose trong internal network
+      - "8087"
     depends_on:
       consul:
         condition: service_healthy
@@ -291,7 +291,7 @@ services:
       dockerfile: BookingService/Dockerfile
     container_name: booking-service
     expose:
-      - "8088"  # Chỉ expose trong internal network
+      - "8088"
     depends_on:
       consul:
         condition: service_healthy
@@ -304,9 +304,36 @@ services:
       SPRING_CLOUD_CONSUL_PORT: 8500
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SERVER_PORT: 8088
+      SPRING_PROFILES_ACTIVE: dev
     networks:
       - gomirai-network
     restart: on-failure
+
+  # Review Service
+  review-service:
+    build:
+      context: .
+      dockerfile: ReviewService/Dockerfile
+    container_name: review-service
+    expose:
+      - "8089"
+    depends_on:
+      consul:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_DATA_MONGODB_URI: ${REVIEW_MONGODB_URI}
+      SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SERVER_PORT: 8089
+      SPRING_PROFILES_ACTIVE: dev
+    networks:
+      - gomirai-network
+    restart: on-failure
+
 
 networks:
   gomirai-network:

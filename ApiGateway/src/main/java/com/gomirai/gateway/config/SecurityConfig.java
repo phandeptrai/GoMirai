@@ -46,7 +46,7 @@ public class SecurityConfig {
     private long maxAge;
 
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
-                         JwtAuthenticationEntryPoint authenticationEntryPoint) {
+            JwtAuthenticationEntryPoint authenticationEntryPoint) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.authenticationEntryPoint = authenticationEntryPoint;
     }
@@ -54,6 +54,7 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+
             // CSRF disabled vì đây là REST API với JWT (stateless)
             .csrf(csrf -> csrf.disable())
             
@@ -81,7 +82,8 @@ public class SecurityConfig {
                 
                 // Pricing estimate endpoint - public để tính giá
                 .requestMatchers(HttpMethod.POST, "/api/pricing/estimate").permitAll()
-                
+                // Cho phép GET Reviews là Public
+                .requestMatchers(HttpMethod.GET, "/api/review/reviewee/**").permitAll()
                 // Tất cả các requests khác cần authentication
                 .anyRequest().authenticated()
             )
@@ -91,9 +93,10 @@ public class SecurityConfig {
 
         // Security headers
         http.headers(headers -> headers
-            .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'"))
-            .frameOptions(frame -> frame.deny())
-            .xssProtection(xss -> {})  // XSS Protection deprecated in Spring Security 6.1+
+                .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'"))
+                .frameOptions(frame -> frame.deny())
+                .xssProtection(xss -> {
+                }) // XSS Protection deprecated in Spring Security 6.1+
         );
 
         return http.build();
@@ -102,21 +105,21 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        
+
         // ✅ FIX: Trim whitespace từ mỗi origin để tránh CORS mismatch (403 Forbidden)
         List<String> origins = Arrays.stream(allowedOrigins.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .collect(Collectors.toList());
         configuration.setAllowedOrigins(origins);
-        
+
         // ✅ FIX: Trim whitespace từ methods
         List<String> methods = Arrays.stream(allowedMethods.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .collect(Collectors.toList());
         configuration.setAllowedMethods(methods);
-        
+
         if ("*".equals(allowedHeaders)) {
             configuration.setAllowedHeaders(Arrays.asList("*"));
         } else {
@@ -127,20 +130,19 @@ public class SecurityConfig {
                     .collect(Collectors.toList());
             configuration.setAllowedHeaders(headers);
         }
-        
+
         // ✅ FIX: Trim whitespace từ exposed headers
         List<String> exposed = Arrays.stream(exposedHeaders.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .collect(Collectors.toList());
         configuration.setExposedHeaders(exposed);
-        
+
         configuration.setAllowCredentials(allowCredentials);
         configuration.setMaxAge(maxAge);
-        
+
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
     }
 }
-
