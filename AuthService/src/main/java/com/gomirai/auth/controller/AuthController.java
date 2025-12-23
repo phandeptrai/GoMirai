@@ -1,10 +1,14 @@
 package com.gomirai.auth.controller;
 
+import java.util.UUID;
+
 import jakarta.validation.Valid;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -45,6 +49,27 @@ public class AuthController {
                 ? new TokenValidationResponse(false, null, null)
                 : authService.validate(token);
         return ResponseEntity.ok(result);
+    }
+
+    /**
+     * Update user role to DRIVER
+     * Called by UserService when driver application is approved
+     */
+    @PutMapping("/users/{userId}/role/driver")
+    public ResponseEntity<Void> updateUserRoleToDriver(@PathVariable UUID userId) {
+        authService.updateUserRoleToDriver(userId);
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Refresh token to get current role
+     * Used when user role has been updated and needs new token
+     */
+    @PostMapping("/refresh")
+    public ResponseEntity<AuthResponse> refreshToken(@RequestHeader(name = "Authorization", required = true) String authorization) {
+        String token = authorization.startsWith("Bearer ") ? authorization.substring(7) : authorization;
+        AuthResponse newAuth = authService.refreshToken(token);
+        return ResponseEntity.ok(newAuth);
     }
 
 }

@@ -1,5 +1,6 @@
 package com.gomirai.tracking.scheduler;
 
+import com.gomirai.tracking.client.BookingServiceClient;
 import com.gomirai.tracking.model.BookingSearchState;
 import com.gomirai.tracking.service.BookingCancellationService;
 import com.gomirai.tracking.service.BookingSearchService;
@@ -28,6 +29,7 @@ public class BookingSearchScheduler {
     private final BookingSearchService bookingSearchService;
     private final BookingCancellationService bookingCancellationService;
     private final RedisTemplate<String, String> redisTemplate;
+    private final BookingServiceClient bookingServiceClient;
     
     private static final String SEARCH_STATE_KEY_PREFIX = "booking:search:";
     
@@ -97,6 +99,7 @@ public class BookingSearchScheduler {
     
     /**
      * Kiểm tra và tăng bán kính cho một booking cụ thể
+     * ONLY expand nếu booking vẫn ở PENDING status
      */
     private void checkAndExpandRadius(UUID bookingId) {
         BookingSearchState state = bookingSearchService.getSearchState(bookingId);
@@ -104,11 +107,20 @@ public class BookingSearchScheduler {
             return;
         }
         
+        // ✅ CHECK: Booking phải vẫn ở PENDING status
+        boolean isPending = bookingServiceClient.isBookingStillPending(bookingId);
+        if (!isPending) {
+            log.info("Booking {} is no longer PENDING, stopping search radius expansion", bookingId);
+            bookingSearchService.removeSearchState(bookingId);
+            return;
+        }
+        
         LocalDateTime now = LocalDateTime.now();
         Duration timeSinceLastSearch = Duration.between(state.getLastSearchTime(), now);
         
-        // Nếu đã qua expandIntervalMinutes kể từ lần tìm kiếm cuối và chưa có tài xế nhận
+        // Nếu đã qua expandIntervalMinutes kể từ lần tìm kiếm cuối và vẫn PENDING
         if (timeSinceLastSearch.toMinutes() >= expandIntervalMinutes) {
+            log.info("Expanding search radius for booking {} (still PENDING)", bookingId);
             bookingSearchService.expandSearchRadius(bookingId);
         }
     }
@@ -129,6 +141,7 @@ public class BookingSearchScheduler {
         return timeSinceStart.toMinutes() >= maxSearchDurationMinutes;
     }
 }
+
 
 
 

@@ -7,6 +7,7 @@ import org.springframework.context.annotation.ComponentScan;
 
 @SpringBootApplication
 @EnableDiscoveryClient
+@org.springframework.scheduling.annotation.EnableScheduling
 @ComponentScan(basePackages = {
 		"com.gomirai.booking", // Service này
 		"com.gomirai.common"    // BẮT BUỘC: để load Security, ExceptionHandler, SecurityUtils...

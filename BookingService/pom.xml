@@ -76,6 +76,12 @@
 			<artifactId>spring-boot-starter-actuator</artifactId>
 		</dependency>
 
+		<!-- 7. WebSocket for real-time updates -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-websocket</artifactId>
+		</dependency>
+
 		<!-- 7. Lombok -->
 		<dependency>
 			<groupId>org.projectlombok</groupId>

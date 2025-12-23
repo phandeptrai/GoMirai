@@ -53,6 +53,7 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_CREATE_TOPICS: "notification.events:3:1"
     networks:
       - gomirai-network
     healthcheck:
@@ -60,6 +61,47 @@ services:
       interval: 10s
       timeout: 10s
       retries: 5
+
+  # Notification Service
+  notification-service:
+    build:
+      context: .
+      dockerfile: NotificationService/Dockerfile
+    container_name: notification-service
+    ports:
+      - "8090:8090"
+    depends_on:
+      consul:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_DATA_MONGODB_URI: ${NOTIFICATION_MONGODB_URI}
+      SPRING_DATA_MONGODB_DATABASE: gomirai_notification
+      SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SERVER_PORT: 8090
+      SPRING_KAFKA_CONSUMER_GROUP_ID: notification-service
+    networks:
+      - gomirai-network
+    restart: on-failure
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api-gateway
+      - notification-service
+    networks:
+      - gomirai-network
+    restart: always
 
   # API Gateway
   api-gateway:
@@ -333,6 +375,7 @@ services:
     networks:
       - gomirai-network
     restart: on-failure
+
 
 
 networks:

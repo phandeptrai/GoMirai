@@ -44,10 +44,11 @@ public class TrackingController {
     }
 
     /**
-     * Lấy vị trí hiện tại của tài xế - chỉ ADMIN.
+     * Lấy vị trí hiện tại của tài xế - cho Customer tracking trong booking
+     * Customer cần xem vị trí driver khi có booking đang active
      */
     @GetMapping("/drivers/{driverId}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> getDriverLocation(@PathVariable String driverId) {
         DriverGeoState state = trackingService.getDriverLocation(driverId);
         if (state == null) {

@@ -73,6 +73,9 @@ public class SecurityConfig {
                 .requestMatchers("/actuator/health").permitAll()  // Only health endpoint
                 .requestMatchers("/health/**").permitAll()  // Service health checks
                 
+                // WebSocket endpoints - không cần JWT cho initial handshake
+                .requestMatchers("/ws/**").permitAll()
+                
                 // CORS preflight requests - phải permit để CORS hoạt động
                 .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                 
@@ -93,10 +96,7 @@ public class SecurityConfig {
 
         // Security headers
         http.headers(headers -> headers
-                .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'"))
-                .frameOptions(frame -> frame.deny())
-                .xssProtection(xss -> {
-                }) // XSS Protection deprecated in Spring Security 6.1+
+                .frameOptions(frame -> frame.sameOrigin())
         );
 
         return http.build();

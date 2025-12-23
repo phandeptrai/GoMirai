@@ -16,6 +16,9 @@ public interface ReviewRepository extends MongoRepository<Review, UUID> {
     List<Review> findAllByRevieweeIdAndDeletedFalse(UUID revieweeId); 
     // Phương thức đã được đổi tên từ findByRevieweeIdAndDeletedFalse
 
-    // Business Rule 2: Check trùng lặp
+    // Business Rule 2: Check trùng lặp (check if specific reviewer already reviewed the booking)
     boolean existsByBookingIdAndReviewerId(UUID bookingId, UUID reviewerId);
+
+    // Check if booking has ANY review (from any user) - used to prevent multiple reviews
+    boolean existsByBookingId(UUID bookingId);
 }

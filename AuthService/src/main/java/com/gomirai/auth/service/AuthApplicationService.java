@@ -86,6 +86,47 @@ public class AuthApplicationService {
         String role = c.get("role", String.class);
         return new TokenValidationResponse(true, userId, role);
     }
+
+    /**
+     * Update user role to DRIVER
+     * Called when driver application is approved by admin
+     */
+    @Transactional
+    public void updateUserRoleToDriver(UUID userId) {
+        AuthUser user = authUserRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException("User not found: " + userId));
+        
+        if (user.getRole() == Role.DRIVER) {
+            // Already a driver, no need to update
+            return;
+        }
+        
+        user.setRole(Role.DRIVER);
+        authUserRepository.save(user);
+        
+        // Note: User needs to login again to get new JWT token with DRIVER role
+    }
+
+    /**
+     * Refresh token to get current role from database
+     * Used when user role has been updated
+     */
+    public AuthResponse refreshToken(String oldToken) {
+        Optional<Claims> claims = jwtService.parseToken(oldToken);
+        if (claims.isEmpty()) {
+            throw new BusinessException("Invalid token");
+        }
+        
+        UUID userId = UUID.fromString(claims.get().getSubject());
+        
+        // Get current role from database (may have been updated)
+        AuthUser user = authUserRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException("User not found"));
+        
+        // Generate new token with current role
+        String newToken = jwtService.generateToken(user.getUserId(), user.getRole().name());
+        return new AuthResponse(user.getUserId(), user.getRole().name(), newToken);
+    }
 }
 
 

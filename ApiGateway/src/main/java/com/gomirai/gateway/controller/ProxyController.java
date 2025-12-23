@@ -128,6 +128,78 @@ public class ProxyController {
 	}
 
 	/**
+	 * Proxy WebSocket/SockJS requests to backend services
+	 * SockJS uses HTTP for transport (info, xhr_streaming, xhr_polling, etc.)
+	 * Pattern: /ws/{serviceId}/** where serviceId maps to service name
+	 */
+	@RequestMapping(path = "/ws/{serviceId}/**")
+	@ResponseBody
+	public ResponseEntity<byte[]> proxyWebSocket(HttpServletRequest request, 
+			@PathVariable("serviceId") String serviceId) throws Exception {
+		if (!StringUtils.hasText(serviceId)) {
+			return ResponseEntity.badRequest().body("Missing serviceId".getBytes());
+		}
+
+		String actualServiceName = mapServiceName(serviceId);
+		ServiceInstance instance = loadBalancerClient.choose(actualServiceName);
+		if (instance == null) {
+			logger.error("Service {} not found for WebSocket proxy", actualServiceName);
+			return ResponseEntity.status(503)
+					.body(("{\"error\":\"Service not available: " + actualServiceName + "\"}").getBytes());
+		}
+
+		String requestUri = request.getRequestURI();
+		String query = request.getQueryString();
+
+		// Forward to backend service with same path
+		// /ws/booking/xxx -> /ws/booking/xxx on BookingService
+		String full = String.format("http://%s:%d%s%s%s",
+				instance.getHost(),
+				instance.getPort(),
+				requestUri,
+				(query != null && !query.isEmpty()) ? "?" : "",
+				(query != null) ? query : "");
+		URI target = URI.create(full);
+
+		HttpMethod method = HttpMethod.valueOf(request.getMethod());
+		HttpHeaders headers = filterRequestHeaders(request);
+		
+		// SockJS may send different content types
+		String contentType = request.getContentType();
+		if (contentType != null) {
+			headers.set("Content-Type", contentType);
+		}
+		
+		byte[] body = StreamUtils.copyToByteArray(request.getInputStream());
+		HttpEntity<byte[]> httpEntity = new HttpEntity<>(body, headers);
+
+		try {
+			logger.debug("Proxying WebSocket: {} {} -> {}", method, requestUri, actualServiceName);
+			ResponseEntity<byte[]> resp = restTemplate.exchange(target, method, httpEntity, byte[].class);
+			HttpHeaders filteredHeaders = filterHeaders(resp.getHeaders());
+			logger.info("WebSocket proxy: {} {} -> {} (status: {})", 
+					method, requestUri, actualServiceName, resp.getStatusCode());
+			return ResponseEntity.status(resp.getStatusCode()).headers(filteredHeaders).body(resp.getBody());
+		} catch (HttpStatusCodeException e) {
+			byte[] errorBody = e.getResponseBodyAsByteArray();
+			logger.warn("WebSocket proxy error: {} {} -> {} (status: {})",
+					method, requestUri, actualServiceName, e.getStatusCode());
+			HttpHeaders responseHeaders = filterHeaders(e.getResponseHeaders());
+			return ResponseEntity.status(e.getStatusCode())
+					.headers(responseHeaders)
+					.body(errorBody);
+		} catch (IllegalArgumentException e) {
+			logger.warn("Invalid WebSocket request: {} {}", method, requestUri);
+			return ResponseEntity.status(400)
+					.body("{\"error\":\"Invalid service\"}".getBytes());
+		} catch (Exception e) {
+			logger.error("WebSocket proxy error: {} {} -> {}", method, requestUri, target, e);
+			return ResponseEntity.status(502)
+					.body("{\"error\":\"WebSocket proxy error\"}".getBytes());
+		}
+	}
+
+	/**
 	 * Filter request headers before forwarding to backend services
 	 * Removes browser-specific headers that shouldn't be forwarded (CORS, Origin,
 	 * etc.)
@@ -228,8 +300,11 @@ public class ProxyController {
 			case "review":
 			case "reviews":
 				return "ReviewService";
+			case "notification":
+			case "notifications":
+				return "NotificationService";
 			default:
-				// ✅ SECURITY: Reject unknown services để prevent service discovery attacks
+				// ✅ SECURITY: Reject unknown services to prevent service discovery attacks
 				throw new IllegalArgumentException("Unknown service: " + serviceId);
 	}
 
@@ -266,6 +341,9 @@ public class ProxyController {
 			case "review":
 			case "reviews":
 				return "/api/review";
+			case "notification":
+			case "notifications":
+				return "/api/notifications";
 		default:
 			return "/" + serviceId;
 	}

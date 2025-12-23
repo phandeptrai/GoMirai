@@ -96,6 +96,14 @@ public class ReviewService {
         return new RatingSummaryResponse(revieweeId, roundedAvg, reviews.size(), distribution);
     }
 
+    /**
+     * Check if a booking has been reviewed (by any user).
+     * This is used to prevent duplicate reviews and to show/hide review button in frontend.
+     */
+    public boolean checkReviewExistsByBookingId(UUID bookingId) {
+        return repository.existsByBookingId(bookingId);
+    }
+
     private ReviewResponse mapToResponse(Review review) {
         ReviewResponse response = new ReviewResponse();
         BeanUtils.copyProperties(review, response);

@@ -18,6 +18,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -81,5 +82,12 @@ public class ReviewController {
 
         // Endpoint này là public (permitAll) nên không cần getCurrentUserId()
         return ResponseEntity.ok(service.getRatingSummary(revieweeId));
+    }
+
+    // 4. Check if booking already has a review (for preventing duplicate reviews)
+    @GetMapping("/booking/{bookingId}/exists")
+    public ResponseEntity<Map<String, Boolean>> checkReviewExists(@PathVariable UUID bookingId) {
+        boolean exists = service.checkReviewExistsByBookingId(bookingId);
+        return ResponseEntity.ok(Map.of("exists", exists));
     }
 }

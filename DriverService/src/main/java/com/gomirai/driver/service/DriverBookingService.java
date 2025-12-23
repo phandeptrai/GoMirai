@@ -40,6 +40,7 @@ public class DriverBookingService {
     private final DriverBookingEventsProducer eventsProducer;
     private final RestTemplate restTemplate;
     private final DriverBookingOfferRepository offerRepository;
+    // WebSocket removed - now handled by NotificationService
     
     @Value("${booking.notification.max-drivers:10}")
     private int maxDriversToNotify;
@@ -191,7 +192,7 @@ public class DriverBookingService {
     /**
      * Handle driver booking offer event from TrackingService
      * This event is sent when a booking is available for the driver to accept
-     * Frontend will poll or use WebSocket to get this information and show popup
+     * PUSH WEBSOCKET DIRECTLY - HARD REALTIME
      */
     public void handleDriverBookingOffer(DriverBookingOfferEvent event) {
         log.info("=== Received DriverBookingOfferEvent ===");
@@ -214,8 +215,8 @@ public class DriverBookingService {
             return;
         }
         
-        log.info("Driver found: driverId={}, status={}, accountStatus={}", 
-            driver.getDriverId(), driver.getAvailabilityStatus(), driver.getAccountStatus());
+        log.info("Driver found: driverId={}, userId={}, status={}, accountStatus={}", 
+            driver.getDriverId(), driver.getUserId(), driver.getAvailabilityStatus(), driver.getAccountStatus());
         
         if (driver.getAvailabilityStatus() != DriverAvailabilityStatus.ONLINE) {
             log.warn("Driver {} is not online (status={}), ignoring booking offer {}", 
@@ -254,9 +255,15 @@ public class DriverBookingService {
         
         try {
             offerRepository.save(offer);
-            log.info("✓ Successfully saved booking offer for driver {} - bookingId={}, fare={}, pickup={}, dropoff={}, expiresAt={}", 
-                event.getDriverId(), event.getBookingId(), offer.getEstimatedFare(), 
-                offer.getPickupAddress(), offer.getDropoffAddress(), offer.getExpiresAt());
+            log.info("✓ Successfully saved booking offer for driver {} - bookingId={}, fare={}, expiresAt={}", 
+                event.getDriverId(), event.getBookingId(), offer.getEstimatedFare(), offer.getExpiresAt());
+            
+            // Set userId and publish event for NotificationService to push WebSocket
+            event.setUserId(driver.getUserId());
+            eventsProducer.publishDriverOfferNotification(event);
+            log.info("Published offer to notification topic for userId={}, bookingId={}", 
+                driver.getUserId(), event.getBookingId());
+            
         } catch (Exception e) {
             log.error("✗ Failed to save booking offer for driver {} - bookingId={}", 
                 event.getDriverId(), event.getBookingId(), e);

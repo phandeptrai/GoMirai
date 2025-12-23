@@ -95,6 +95,20 @@ public class DriverProfileController {
 		return ResponseEntity.ok(driverProfileService.getRating(driverId));
 	}
 
+	@GetMapping("/{driverId}")
+	public ResponseEntity<DriverProfileResponse> getProfile(@PathVariable("driverId") UUID driverId) {
+		return ResponseEntity.ok(driverProfileService.getProfile(driverId));
+	}
+
+	/**
+	 * Get driver profile by userId (useful when booking stores userId instead of driverId)
+	 * GET /api/drivers/user/{userId}
+	 */
+	@GetMapping("/user/{userId}")
+	public ResponseEntity<DriverProfileResponse> getProfileByUserId(@PathVariable("userId") UUID userId) {
+		return ResponseEntity.ok(driverProfileService.getProfileByUserId(userId));
+	}
+
 	@GetMapping
 	@PreAuthorize("hasRole('ADMIN')")
 	public ResponseEntity<List<DriverProfileResponse>> listByStatus(

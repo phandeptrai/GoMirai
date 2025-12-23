@@ -32,6 +32,14 @@ public class SecurityUtils {
         if (principal instanceof UUID) {
             return (UUID) principal;
         }
+        
+        if (principal instanceof String) {
+            try {
+                return UUID.fromString((String) principal);
+            } catch (IllegalArgumentException e) {
+                // Not a UUID string, fall through to exception
+            }
+        }
 
         throw new SecurityException("Invalid authentication principal");
     }

@@ -17,9 +17,11 @@ import com.gomirai.driver.dto.response.DriverProfileResponse;
 import com.gomirai.driver.dto.response.DriverRatingResponse;
 import com.gomirai.driver.dto.response.DriverStatusResponse;
 import com.gomirai.driver.dto.response.DriverVehicleResponse;
+import com.gomirai.common.dto.event.DriverApprovedEvent;
 import com.gomirai.common.enums.DriverAccountStatus;
 import com.gomirai.common.enums.DriverAvailabilityStatus;
 import com.gomirai.driver.messaging.DriverAvailabilityEventsProducer;
+import com.gomirai.driver.messaging.DriverApprovalEventsProducer;
 import com.gomirai.driver.model.DriverProfile;
 import com.gomirai.driver.model.DriverVehicle;
 import com.gomirai.driver.repository.DriverProfileRepository;
@@ -33,6 +35,7 @@ public class DriverProfileService {
 	private final DriverProfileRepository driverProfileRepository;
 	private final SecurityUtils securityUtils;
 	private final DriverAvailabilityEventsProducer availabilityEventsProducer;
+	private final DriverApprovalEventsProducer approvalEventsProducer;
 
 	public DriverProfileResponse apply(DriverApplicationRequest request) {
 		UUID userId = securityUtils.getCurrentUserId();
@@ -103,6 +106,18 @@ public class DriverProfileService {
 		return new DriverRatingResponse(profile.getDriverId(), profile.getRating());
 	}
 
+	public DriverProfileResponse getProfile(UUID driverId) {
+		DriverProfile profile = driverProfileRepository.findById(driverId)
+			.orElseThrow(() -> new NotFoundException("Không tìm thấy tài xế: " + driverId));
+		return toResponse(profile);
+	}
+
+	public DriverProfileResponse getProfileByUserId(UUID userId) {
+		DriverProfile profile = driverProfileRepository.findByUserId(userId)
+			.orElseThrow(() -> new NotFoundException("Không tìm thấy tài xế cho userId: " + userId));
+		return toResponse(profile);
+	}
+
 	public List<DriverProfileResponse> listByStatus(DriverAccountStatus status) {
 		List<DriverProfile> profiles = status == null
 			? driverProfileRepository.findAll()
@@ -123,7 +138,20 @@ public class DriverProfileService {
 		profile.setAccountStatus(DriverAccountStatus.ACTIVE);
 		profile.setAvailabilityStatus(DriverAvailabilityStatus.OFFLINE);
 		profile.setUpdatedAt(Instant.now());
-		return toResponse(driverProfileRepository.save(profile));
+		
+		// Save first
+		DriverProfile saved = driverProfileRepository.save(profile);
+		
+		// Publish event to notify UserService to update role to DRIVER
+		approvalEventsProducer.publishDriverApproved(
+			new DriverApprovedEvent(
+				saved.getUserId(),
+				saved.getDriverId(),
+				Instant.now().toString()
+			)
+		);
+		
+		return toResponse(saved);
 	}
 
 	public DriverProfileResponse reject(UUID driverId) {

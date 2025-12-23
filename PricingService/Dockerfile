@@ -12,11 +12,11 @@ WORKDIR /workspace/PricingService
 COPY PricingService/pom.xml .
 COPY PricingService/mvnw .
 COPY PricingService/.mvn ./.mvn
-RUN ./mvnw dependency:go-offline -B
+
 
 # Copy source and build
 COPY PricingService/src ./src
-RUN ./mvnw clean package -DskipTests
+RUN mvn clean package -DskipTests
 
 # Runtime stage
 FROM eclipse-temurin:21-jre-alpine

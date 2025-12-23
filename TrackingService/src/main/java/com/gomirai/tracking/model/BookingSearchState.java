@@ -5,6 +5,8 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -32,7 +34,11 @@ public class BookingSearchState {
     private String currency;
     private String pickupAddress;
     private String dropoffAddress;
+    
+    // Track drivers who have already been notified to avoid duplicate offers
+    private Set<String> notifiedDriverIds = new HashSet<>();
 }
+
 
 
 

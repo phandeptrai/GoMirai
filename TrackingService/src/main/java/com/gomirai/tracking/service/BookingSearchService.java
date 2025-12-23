@@ -79,10 +79,13 @@ public class BookingSearchService {
                 // Có tài xế gần, gửi event cho các driver
                 log.info("Sending offers to {} drivers for bookingId={}", nearbyDrivers.size(), bookingId);
                 
+                // Check if this is initial search or radius expansion
+                boolean isExpansion = searchState.getSearchAttempts() > 0;
+                
                 int sentCount = 0;
                 for (DriverLocationResponse driver : nearbyDrivers) {
                     try {
-                        sendBookingOfferToDriver(bookingId, driver, searchState);
+                        sendBookingOfferToDriver(bookingId, driver, searchState, isExpansion);
                         sentCount++;
                     } catch (Exception e) {
                         log.error("Failed to send offer to driver {} for bookingId={}", 
@@ -161,9 +164,9 @@ public class BookingSearchService {
     /**
      * Gửi event cho driver để hiển thị popup nhận chuyến
      */
-    private void sendBookingOfferToDriver(UUID bookingId, DriverLocationResponse driver, BookingSearchState searchState) {
+    private void sendBookingOfferToDriver(UUID bookingId, DriverLocationResponse driver, BookingSearchState searchState, boolean isExpansion) {
         try {
-            log.info("=== Sending booking offer to driver {} for bookingId={} ===", driver.getDriverId(), bookingId);
+            log.info("=== Sending booking offer to driver {} for bookingId={} (isExpansion={}) ===", driver.getDriverId(), bookingId, isExpansion);
             log.info("Search state: fare={}, pickup={}, dropoff={}, distance={}km, duration={}min", 
                 searchState.getEstimatedFare(), searchState.getPickupAddress(), 
                 searchState.getDropoffAddress(), searchState.getEstimatedDistanceKm(), 
@@ -224,6 +227,7 @@ public class BookingSearchService {
         state.setSearchStartTime(LocalDateTime.now());
         state.setLastSearchTime(LocalDateTime.now());
         state.setIsActive(true);
+        state.setNotifiedDriverIds(new java.util.HashSet<>()); // Initialize empty set
         
         // Use data from event first (if available), then try to fetch from BookingService as fallback
         if (event.getDropoffLatitude() != null && event.getDropoffLongitude() != null) {
@@ -350,13 +354,14 @@ public class BookingSearchService {
                 nearbyDrivers.size(), bookingId, newRadius);
             
             for (DriverLocationResponse driver : nearbyDrivers) {
-                sendBookingOfferToDriver(bookingId, driver, state);
+                sendBookingOfferToDriver(bookingId, driver, state, true); // isExpansion = true
             }
         } else {
             log.info("No drivers found for bookingId={} with expanded radius {}m", bookingId, newRadius);
         }
     }
 }
+
 
 
 

@@ -52,6 +52,8 @@ public class SecurityConfig {
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(authEntryPoint))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health").permitAll()
+                        // Allow WebSocket endpoints without authentication
+                        .requestMatchers("/ws/**").permitAll()
                         .requestMatchers(request -> {
                             String path = request.getRequestURI();
                             // Allow /api/booking/{bookingId}/info and /api/booking/{bookingId}/cancel-no-driver

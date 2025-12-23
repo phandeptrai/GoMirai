@@ -14,6 +14,7 @@ import java.util.UUID;
 public class DriverBookingOfferEvent extends BaseEvent {
     private UUID bookingId;
     private UUID driverId;
+    private UUID userId;  // For WebSocket push - resolved by DriverService
     private Double pickupLatitude;
     private Double pickupLongitude;
     private Double dropoffLatitude;
@@ -51,6 +52,7 @@ public class DriverBookingOfferEvent extends BaseEvent {
         this.offeredAt = java.time.Instant.now().toString();
     }
 }
+
 
 
 

@@ -40,6 +40,8 @@ public class SecurityConfig {
 			.exceptionHandling(ex -> ex.authenticationEntryPoint(authenticationEntryPoint))
 			.authorizeHttpRequests(authorize -> authorize
 				.requestMatchers("/actuator/health").permitAll()
+				// Allow WebSocket endpoints without authentication
+				.requestMatchers("/ws/**").permitAll()
 				.anyRequest().authenticated()
 			)
 			.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
@@ -55,7 +57,8 @@ public class SecurityConfig {
 	@Bean
 	public CorsConfigurationSource corsConfigurationSource() {
 		CorsConfiguration configuration = new CorsConfiguration();
-		configuration.setAllowedOrigins(Arrays.asList("http://localhost:8080"));
+		// Allow frontend origins (development)
+		configuration.setAllowedOriginPatterns(Arrays.asList("http://localhost:*", "http://127.0.0.1:*"));
 		configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
 		configuration.setAllowedHeaders(Arrays.asList("*"));
 		configuration.setExposedHeaders(Arrays.asList("Authorization"));

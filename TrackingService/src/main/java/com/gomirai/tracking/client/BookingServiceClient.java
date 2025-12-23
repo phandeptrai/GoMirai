@@ -146,7 +146,47 @@ public class BookingServiceClient {
         
         return null;
     }
+    
+    /**
+     * Check if booking is still in PENDING status
+     * Returns true if booking is still PENDING, false otherwise (MATCHED, CANCELED, etc.)
+     */
+    public boolean isBookingStillPending(UUID bookingId) {
+        try {
+            String url = bookingServiceUrl + "/api/booking/" + bookingId + "/info";
+            log.debug("Checking booking status from: {}", url);
+            
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            HttpEntity<Void> request = new HttpEntity<>(headers);
+            
+            ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                url, HttpMethod.GET, request, 
+                new ParameterizedTypeReference<Map<String, Object>>() {}
+            );
+            
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                Map<String, Object> body = response.getBody();
+                Map<String, Object> data = (Map<String, Object>) body.get("data");
+                
+                if (data == null) {
+                    data = body; // Direct response without wrapper
+                }
+                
+                if (data != null) {
+                    String status = (String) data.get("status");
+                    log.debug("Booking {} status: {}", bookingId, status);
+                    return "PENDING".equals(status);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error checking booking status for bookingId={}", bookingId, e);
+        }
+        
+        return false; // If error or not found, assume not pending
+    }
 }
+
 
 
 

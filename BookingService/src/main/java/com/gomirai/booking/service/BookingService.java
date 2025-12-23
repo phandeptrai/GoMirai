@@ -12,12 +12,13 @@ import com.gomirai.booking.dto.request.CompleteBookingRequest;
 import com.gomirai.booking.dto.request.CreateBookingRequest;
 import com.gomirai.booking.dto.response.BookingResponse;
 import com.gomirai.booking.enums.BookingStatus;
-import com.gomirai.booking.event.BookingAssignedEvent;
+import com.gomirai.common.dto.event.BookingAssignedEvent;
 import com.gomirai.booking.event.BookingCompletedEvent;
 import com.gomirai.common.dto.event.BookingSearchDriversEvent;
 import com.gomirai.common.dto.event.DriverAcceptedEvent;
 import com.gomirai.booking.event.DriverDeclinedEvent;
 import com.gomirai.booking.messaging.BookingEventsProducer;
+import com.gomirai.common.dto.event.BookingStatusChangedEvent;
 import com.gomirai.booking.model.AddressSnapshot;
 import com.gomirai.booking.model.Booking;
 import com.gomirai.booking.model.BookingPriceSnapshot;
@@ -54,6 +55,7 @@ public class BookingService {
     private final TrackingServiceClient trackingServiceClient;
     private final BookingEventsProducer eventsProducer;
     private final SecurityUtils securityUtils;
+    // WebSocket removed - now handled by NotificationService
     
     @Autowired
     private MongoTemplate mongoTemplate;
@@ -152,7 +154,12 @@ public class BookingService {
             log.info("Created booking: bookingId={}, customerId={}, status={}", 
                 savedBooking.getBookingId(), customerId, savedBooking.getStatus());
             
-            return toResponse(savedBooking);
+            // Step 9: Broadcast via WebSocket for real-time updates
+            // WebSocket removed - NotificationService handles realtime via Kafka
+            BookingResponse response = toResponse(savedBooking);
+            // webSocketService.notifyCustomer(customerId, response);
+            
+            return response;
             
         } catch (BusinessException e) {
             // Saga compensation: If Map or Pricing service fails, booking is not persisted
@@ -335,7 +342,14 @@ public class BookingService {
         
         log.info("Driver {} successfully accepted booking {} via REST API", driverId, bookingId);
         
-        return toResponse(updatedBooking);
+        // Broadcast via WebSocket - notify both customer and driver in real-time
+        BookingResponse response = toResponse(updatedBooking);
+        // webSocketService.notifyBothParties(response); // Removed - NotificationService handles
+        
+        // Publish status change event for NotificationService
+        publishStatusChange(updatedBooking, BookingStatus.PENDING);
+        
+        return response;
     }
     
     /**
@@ -384,7 +398,14 @@ public class BookingService {
         
         log.info("Driver {} marked booking {} as arrived", currentUserId, bookingId);
         
-        return toResponse(savedBooking);
+        // Broadcast via WebSocket - notify customer that driver has arrived
+        BookingResponse response = toResponse(savedBooking);
+        // webSocketService.notifyBothParties(response); // Removed - NotificationService handles
+        
+        // Publish status change event for NotificationService
+        publishStatusChange(savedBooking, BookingStatus.MATCHED);
+        
+        return response;
     }
     
     /**
@@ -413,7 +434,14 @@ public class BookingService {
         
         log.info("Driver {} started trip for booking {}", currentUserId, bookingId);
         
-        return toResponse(savedBooking);
+        // Broadcast via WebSocket - notify customer that trip has started
+        BookingResponse response = toResponse(savedBooking);
+        // webSocketService.notifyBothParties(response); // Removed - NotificationService handles
+        
+        // Publish status change event for NotificationService
+        publishStatusChange(savedBooking, BookingStatus.DRIVER_ARRIVED);
+        
+        return response;
     }
     
     /**
@@ -453,7 +481,14 @@ public class BookingService {
         );
         eventsProducer.publishBookingCompletedEvent(completedEvent);
         
-        return toResponse(savedBooking);
+        // Broadcast via WebSocket - notify both parties that booking is completed
+        BookingResponse response = toResponse(savedBooking);
+        // webSocketService.notifyBothParties(response); // Removed - NotificationService handles
+        
+        // Publish status change event for NotificationService
+        publishStatusChange(savedBooking, BookingStatus.IN_PROGRESS);
+        
+        return response;
     }
     
     /**
@@ -480,7 +515,25 @@ public class BookingService {
         
         Booking savedBooking = bookingRepository.save(booking);
         
-        return toResponse(savedBooking);
+        // Publish booking canceled event to notify other services (e.g., TrackingService)
+        com.gomirai.common.dto.event.BookingCanceledEvent canceledEvent = 
+            new com.gomirai.common.dto.event.BookingCanceledEvent(
+                savedBooking.getBookingId(),
+                savedBooking.getCustomerId(),
+                savedBooking.getCancelReason(),
+                "CUSTOMER"
+            );
+        eventsProducer.publishBookingCanceledEvent(canceledEvent);
+        log.info("Published BookingCanceledEvent for bookingId={}", savedBooking.getBookingId());
+        
+        // Broadcast via WebSocket - notify driver if assigned
+        BookingResponse response = toResponse(savedBooking);
+        // webSocketService.notifyBothParties(response); // Removed - NotificationService handles
+        
+        // Publish status change event for NotificationService
+        publishStatusChange(savedBooking, booking.getStatus()); // Previous status was whatever it was before
+        
+        return response;
     }
     
     /**
@@ -506,6 +559,9 @@ public class BookingService {
         Booking savedBooking = bookingRepository.save(booking);
         
         log.info("Booking {} cancelled - no driver found. Reason: {}", bookingId, reason);
+        
+        // Publish status change event for NotificationService
+        publishStatusChange(savedBooking, BookingStatus.PENDING);
         
         return toResponse(savedBooking);
     }
@@ -766,6 +822,33 @@ public class BookingService {
             .createdAt(booking.getCreatedAt())
             .updatedAt(booking.getUpdatedAt())
             .build();
+    }
+    
+    /**
+     * Helper to publish status change event for WebSocket updates
+     */
+    private void publishStatusChange(Booking booking, BookingStatus previousStatus) {
+        try {
+            BookingStatusChangedEvent event = BookingStatusChangedEvent.builder()
+                .bookingId(booking.getBookingId())
+                .customerId(booking.getCustomerId().toString())
+                .driverId(booking.getDriverId() != null ? booking.getDriverId().toString() : null)
+                .status(booking.getStatus().name())
+                .previousStatus(previousStatus != null ? previousStatus.name() : null)
+                .pickupLatitude(booking.getPickupLocation().getLatitude())
+                .pickupLongitude(booking.getPickupLocation().getLongitude())
+                .pickupAddress(booking.getPickupLocation().getFullAddress())
+                .dropoffLatitude(booking.getDropoffLocation().getLatitude())
+                .dropoffLongitude(booking.getDropoffLocation().getLongitude())
+                .dropoffAddress(booking.getDropoffLocation().getFullAddress())
+                .estimatedFare(booking.getPrice() != null ? booking.getPrice().getFinalAmount() : null)
+                .vehicleType(booking.getVehicleType().name())
+                .build();
+                
+            eventsProducer.publishBookingStatusChangedEvent(event);
+        } catch (Exception e) {
+            log.error("Failed to publish status change event for booking {}", booking.getBookingId(), e);
+        }
     }
 }
 
