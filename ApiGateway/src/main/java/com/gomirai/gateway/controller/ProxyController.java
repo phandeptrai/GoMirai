@@ -273,83 +273,52 @@ public class ProxyController {
 		if (serviceId == null || serviceId.isEmpty()) {
 			throw new IllegalArgumentException("Service ID cannot be empty");
 		}
+		
+		// 1. Try exact match
+		if (loadBalancerClient.choose(serviceId) != null) {
+			return serviceId;
+		}
+
 		String normalized = serviceId.toLowerCase();
-		switch (normalized) {
-			case "auth":
-				return "AuthService";
-			case "user":
-			case "users":
-				return "UserService";
-			case "driver":
-			case "drivers":
-				return "DriverService";
-			case "tracking":
-			case "track":
-			case "trackings":
-				return "TrackingService";
-			case "map":
-			case "maps":
-				return "MapService";
+		String capitalized = StringUtils.capitalize(normalized);
 
-			case "pricing":
-			case "price":
-				return "PricingService";
-			case "booking":
-			case "bookings":
-				return "BookingService";
-			case "review":
-			case "reviews":
-				return "ReviewService";
-			case "notification":
-			case "notifications":
-				return "NotificationService";
-			default:
-				// ✅ SECURITY: Reject unknown services to prevent service discovery attacks
-				throw new IllegalArgumentException("Unknown service: " + serviceId);
-	}
+		// 2. Try "Name" + "Service" (e.g., "auth" -> "AuthService")
+		String standardName = capitalized + "Service";
+		if (loadBalancerClient.choose(standardName) != null) {
+			return standardName;
+		}
 
+		// 3. Try handling plurals (e.g., "users" -> "UserService")
+		if (normalized.endsWith("s")) {
+			String singular = normalized.substring(0, normalized.length() - 1);
+			String capitalizedSingular = StringUtils.capitalize(singular);
+			String singularName = capitalizedSingular + "Service";
+			if (loadBalancerClient.choose(singularName) != null) {
+				return singularName;
+			}
+		}
+
+		// 4. Try normalized match as fallback
+		if (loadBalancerClient.choose(normalized) != null) {
+			return normalized;
+		}
+
+		throw new IllegalArgumentException("Unknown service: " + serviceId);
 	}
 
 	private String getServicePathPrefix(String serviceId) {
 		if (serviceId == null || serviceId.isEmpty()) {
 			return "";
 		}
-		String normalized = serviceId.toLowerCase();
-		switch (normalized) {
-			case "auth":
-				return "/auth";
-			case "user":
-			case "users":
-				return "/api/users";
-			case "driver":
-			case "drivers":
-				return "/api/drivers";
-			case "tracking":
-			case "track":
-			case "trackings":
-				return "/api/tracking";
-			case "map":
-			case "maps":
-				return "/api/map";
-				
-			case "pricing":
-			case "price":
-				return "/api/pricing";
-			case "booking":
-			case "bookings":
-			return "/api/booking";
-			case "review":
-			case "reviews":
-				return "/api/review";
-			case "notification":
-			case "notifications":
-				return "/api/notifications";
-		default:
-			return "/" + serviceId;
-	}
+		
+		// Special handling for legacy services
+		if (serviceId.equalsIgnoreCase("auth")) {
+			return "/auth";
+		}
 
-
-	
+		// Fully dynamic: assumes standard /api/{serviceId} pattern
+		// Example: serviceId="user" -> /api/user
+		return "/api/" + serviceId.toLowerCase();
 	}
 }
 
