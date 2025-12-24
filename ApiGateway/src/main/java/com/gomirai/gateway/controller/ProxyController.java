@@ -228,10 +228,15 @@ public class ProxyController {
 			case "review":
 			case "reviews":
 				return "ReviewService";
+			case "payment":
+			case "payments":
+			case "wallet":
+			case "v1": // Thêm v1 để xử lý đường dẫn /api/v1/...
+				return "PaymentService";
 			default:
 				// ✅ SECURITY: Reject unknown services để prevent service discovery attacks
 				throw new IllegalArgumentException("Unknown service: " + serviceId);
-	}
+		}
 
 	}
 
@@ -256,22 +261,24 @@ public class ProxyController {
 			case "map":
 			case "maps":
 				return "/api/map";
-				
+
 			case "pricing":
 			case "price":
 				return "/api/pricing";
 			case "booking":
 			case "bookings":
-			return "/api/booking";
+				return "/api/booking";
 			case "review":
 			case "reviews":
 				return "/api/review";
-		default:
-			return "/" + serviceId;
-	}
+			case "payment":
+			case "payments":
+			case "wallet":
+			case "v1":
+				return "/api/v1";
+			default:
+				return "/" + serviceId;
+		}
 
-
-	
 	}
 }
-
