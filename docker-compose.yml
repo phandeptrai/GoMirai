@@ -350,6 +350,8 @@ services:
     networks:
       - gomirai-network
     restart: on-failure
+    deploy:
+      replicas: 1
 
   # Review Service
   review-service:
