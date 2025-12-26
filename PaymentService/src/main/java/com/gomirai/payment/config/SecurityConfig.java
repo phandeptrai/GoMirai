@@ -35,10 +35,10 @@ public class SecurityConfig {
                         // ➡️ QUAN TRỌNG: Cho phép BookingService gọi các API thanh toán/hoàn tiền nội
                         // bộ
                         // Trong thực tế, nên check Role INTERNAL_SERVICE hoặc IP whitelist
-                        .requestMatchers("/api/v1/payments/**").permitAll()
+                        .requestMatchers("/api/payment/internal/**").permitAll()
 
                         // Các API liên quan đến ví cá nhân yêu cầu phải có Token hợp lệ
-                        .requestMatchers("/api/v1/wallet/**", "/api/v1/transactions/**").authenticated()
+                        .requestMatchers("/api/payment/**", "/api/payment/transactions/**").authenticated()
 
                         .anyRequest().authenticated())
 

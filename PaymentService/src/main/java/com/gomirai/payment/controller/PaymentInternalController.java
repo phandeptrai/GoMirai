@@ -7,7 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/api/v1/payments")
+@RequestMapping("/api/payment/internal")
 public class PaymentInternalController {
 
     private final WalletService walletService;
@@ -17,11 +17,11 @@ public class PaymentInternalController {
     }
 
     @PostMapping("/ride")
-    public ResponseEntity<TransactionResponse> payRide(@RequestBody com.gomirai.payment.dto.request.RidePaymentRequest request) {
+    public ResponseEntity<TransactionResponse> payRide(
+            @RequestBody com.gomirai.payment.dto.request.RidePaymentRequest request) {
         return ResponseEntity.ok(walletService.payRide(request));
     }
 
-    
     @PostMapping("/refund")
     public ResponseEntity<TransactionResponse> refund(@RequestBody RefundRequest request) {
         return ResponseEntity.ok(walletService.refundRide(request.bookingId(), request.amount()));
