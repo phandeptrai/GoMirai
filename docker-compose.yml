@@ -201,7 +201,7 @@ services:
   payment-service:
     build:
       context: .  # Build from root to access common-lib
-      dockerfile: PaymentSerivce/Dockerfile
+      dockerfile: PaymentService/Dockerfile
     container_name: payment-service
     expose:
       - "8083"  # Internal only

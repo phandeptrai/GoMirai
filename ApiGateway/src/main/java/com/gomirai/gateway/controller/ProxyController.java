@@ -134,7 +134,7 @@ public class ProxyController {
 	 */
 	@RequestMapping(path = "/ws/{serviceId}/**")
 	@ResponseBody
-	public ResponseEntity<byte[]> proxyWebSocket(HttpServletRequest request, 
+	public ResponseEntity<byte[]> proxyWebSocket(HttpServletRequest request,
 			@PathVariable("serviceId") String serviceId) throws Exception {
 		if (!StringUtils.hasText(serviceId)) {
 			return ResponseEntity.badRequest().body("Missing serviceId".getBytes());
@@ -163,13 +163,13 @@ public class ProxyController {
 
 		HttpMethod method = HttpMethod.valueOf(request.getMethod());
 		HttpHeaders headers = filterRequestHeaders(request);
-		
+
 		// SockJS may send different content types
 		String contentType = request.getContentType();
 		if (contentType != null) {
 			headers.set("Content-Type", contentType);
 		}
-		
+
 		byte[] body = StreamUtils.copyToByteArray(request.getInputStream());
 		HttpEntity<byte[]> httpEntity = new HttpEntity<>(body, headers);
 
@@ -177,7 +177,7 @@ public class ProxyController {
 			logger.debug("Proxying WebSocket: {} {} -> {}", method, requestUri, actualServiceName);
 			ResponseEntity<byte[]> resp = restTemplate.exchange(target, method, httpEntity, byte[].class);
 			HttpHeaders filteredHeaders = filterHeaders(resp.getHeaders());
-			logger.info("WebSocket proxy: {} {} -> {} (status: {})", 
+			logger.info("WebSocket proxy: {} {} -> {} (status: {})",
 					method, requestUri, actualServiceName, resp.getStatusCode());
 			return ResponseEntity.status(resp.getStatusCode()).headers(filteredHeaders).body(resp.getBody());
 		} catch (HttpStatusCodeException e) {
@@ -273,7 +273,7 @@ public class ProxyController {
 		if (serviceId == null || serviceId.isEmpty()) {
 			throw new IllegalArgumentException("Service ID cannot be empty");
 		}
-		
+
 		// 1. Try exact match
 		if (loadBalancerClient.choose(serviceId) != null) {
 			return serviceId;
@@ -310,7 +310,7 @@ public class ProxyController {
 		if (serviceId == null || serviceId.isEmpty()) {
 			return "";
 		}
-		
+
 		// Special handling for legacy services
 		if (serviceId.equalsIgnoreCase("auth")) {
 			return "/auth";
@@ -321,4 +321,3 @@ public class ProxyController {
 		return "/api/" + serviceId.toLowerCase();
 	}
 }
-
