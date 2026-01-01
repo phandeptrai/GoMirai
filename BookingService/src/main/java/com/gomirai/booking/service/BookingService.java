@@ -1,8 +1,12 @@
 package com.gomirai.booking.service;
 
 import com.gomirai.booking.client.MapServiceClient;
+import com.gomirai.booking.client.PaymentServiceClient;
 import com.gomirai.booking.client.PricingServiceClient;
 import com.gomirai.booking.client.TrackingServiceClient;
+import com.gomirai.booking.dto.external.RidePaymentRequest;
+import com.gomirai.booking.dto.external.RefundRequest;
+import com.gomirai.booking.dto.external.TransactionResponse;
 import com.gomirai.booking.dto.external.DriverGeoStateResponse;
 import com.gomirai.booking.dto.external.GeoPoint;
 import com.gomirai.booking.dto.external.MapServiceRouteResponse;
@@ -40,6 +44,7 @@ import org.springframework.data.mongodb.core.query.Update;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -52,6 +57,7 @@ public class BookingService {
     private final BookingRepository bookingRepository;
     private final MapServiceClient mapServiceClient;
     private final PricingServiceClient pricingServiceClient;
+    private final PaymentServiceClient paymentServiceClient;
     private final TrackingServiceClient trackingServiceClient;
     private final BookingEventsProducer eventsProducer;
     private final SecurityUtils securityUtils;
@@ -144,6 +150,34 @@ public class BookingService {
             priceSnapshot.setPricingRuleId(pricingResponse.getAppliedRuleId().toString());
             
             booking.setPrice(priceSnapshot);
+            
+            // Step 6.5: Process payment if paymentMethod = WALLET
+            if (request.getPaymentMethod() == com.gomirai.booking.enums.PaymentMethod.WALLET) {
+                try {
+                    RidePaymentRequest paymentRequest = new RidePaymentRequest(
+                        customerId,
+                        booking.getBookingId(),
+                        BigDecimal.valueOf(priceSnapshot.getFinalAmount())
+                    );
+                    
+                    TransactionResponse paymentResponse = paymentServiceClient.payRide(paymentRequest);
+                    
+                    if (!"SUCCESS".equals(paymentResponse.getStatus())) {
+                        throw new BusinessException("PAYMENT_FAILED: Unable to process wallet payment");
+                    }
+                    
+                    log.info("Wallet payment successful for bookingId={}, transactionId={}", 
+                        booking.getBookingId(), paymentResponse.getTransactionId());
+                        
+                } catch (BusinessException e) {
+                    // Re-throw BusinessException from PaymentServiceClient with specific error codes
+                    log.error("Payment failed for bookingId={}: {}", booking.getBookingId(), e.getMessage());
+                    throw e;
+                } catch (Exception e) {
+                    log.error("Unexpected payment error for bookingId={}", booking.getBookingId(), e);
+                    throw new BusinessException("PAYMENT_UNAVAILABLE: Unable to process wallet payment. Please try again.");
+                }
+            }
             
             // Step 7: Persist booking draft
             Booking savedBooking = bookingRepository.save(booking);
@@ -514,6 +548,29 @@ public class BookingService {
         booking.setUpdatedAt(LocalDateTime.now());
         
         Booking savedBooking = bookingRepository.save(booking);
+        
+        // Refund if paid with WALLET
+        if (savedBooking.getPaymentMethod() == com.gomirai.booking.enums.PaymentMethod.WALLET 
+            && savedBooking.getPrice() != null 
+            && savedBooking.getPrice().getFinalAmount() > 0) {
+            
+            try {
+                RefundRequest refundRequest = new RefundRequest(
+                    savedBooking.getBookingId(),
+                    BigDecimal.valueOf(savedBooking.getPrice().getFinalAmount())
+                );
+                
+                TransactionResponse refundResponse = paymentServiceClient.refund(refundRequest);
+                
+                log.info("Refund successful for bookingId={}, transactionId={}", 
+                    savedBooking.getBookingId(), refundResponse.getTransactionId());
+                    
+            } catch (Exception e) {
+                log.error("Refund failed for bookingId={}", savedBooking.getBookingId(), e);
+                // Don't throw - booking is already canceled, just log error
+                // In production, may want to trigger manual review or compensation event
+            }
+        }
         
         // Publish booking canceled event to notify other services (e.g., TrackingService)
         com.gomirai.common.dto.event.BookingCanceledEvent canceledEvent = 
