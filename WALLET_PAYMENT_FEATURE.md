@@ -31,6 +31,11 @@ Tích hợp phương thức thanh toán qua ví điện tử (MyWallet) vào h�
 
 ## Tổ Chức Thư Mục
 
+> **Chú thích:**
+> - 🆕 **TẠO MỚI** - File được tạo mới cho tính năng này
+> - ✏️ **BỔ SUNG** - File có sẵn nhưng được chỉnh sửa/bổ sung
+> - ✅ **CÓ SẴN** - File có sẵn, không thay đổi (chỉ sử dụng)
+
 ### Backend Structure
 
 ```
@@ -38,49 +43,63 @@ GoMirai/
 ├── BookingService/
 │   ├── src/main/java/com/gomirai/booking/
 │   │   ├── client/
-│   │   │   ├── MapServiceClient.java              # Existing
-│   │   │   ├── PricingServiceClient.java          # Existing
-│   │   │   ├── TrackingServiceClient.java         # Existing
-│   │   │   └── PaymentServiceClient.java          # ✅ NEW - Tích hợp payment
+│   │   │   ├── MapServiceClient.java              # ✅ CÓ SẴN
+│   │   │   ├── PricingServiceClient.java          # ✅ CÓ SẴN
+│   │   │   ├── TrackingServiceClient.java         # ✅ CÓ SẴN
+│   │   │   └── PaymentServiceClient.java          # 🆕 TẠO MỚI - Client gọi PaymentService
 │   │   │
 │   │   ├── dto/
 │   │   │   ├── external/
-│   │   │   │   ├── RidePaymentRequest.java        # ✅ NEW - DTO payment request
-│   │   │   │   ├── RefundRequest.java             # ✅ NEW - DTO refund request
-│   │   │   │   ├── TransactionResponse.java       # ✅ NEW - DTO payment response
-│   │   │   │   ├── PricingServiceResponse.java    # Existing
-│   │   │   │   └── MapServiceRouteResponse.java   # Existing
+│   │   │   │   ├── RidePaymentRequest.java        # 🆕 TẠO MỚI - DTO payment request
+│   │   │   │   ├── RefundRequest.java             # 🆕 TẠO MỚI - DTO refund request
+│   │   │   │   ├── TransactionResponse.java       # 🆕 TẠO MỚI - DTO payment response
+│   │   │   │   ├── PricingServiceResponse.java    # ✅ CÓ SẴN
+│   │   │   │   └── MapServiceRouteResponse.java   # ✅ CÓ SẴN
 │   │   │   │
 │   │   │   ├── request/
-│   │   │   │   └── CreateBookingRequest.java      # ✅ MODIFIED - Đã có paymentMethod
+│   │   │   │   └── CreateBookingRequest.java      # ✅ CÓ SẴN - Đã có field paymentMethod
 │   │   │   │
 │   │   │   └── response/
-│   │   │       └── BookingResponse.java           # Existing
+│   │   │       └── BookingResponse.java           # ✅ CÓ SẴN
 │   │   │
 │   │   ├── enums/
-│   │   │   ├── PaymentMethod.java                 # ✅ EXISTING - Enum CASH, WALLET
-│   │   │   └── BookingStatus.java                 # Existing
+│   │   │   ├── PaymentMethod.java                 # ✅ CÓ SẴN - Enum CASH, WALLET
+│   │   │   └── BookingStatus.java                 # ✅ CÓ SẴN
 │   │   │
 │   │   ├── service/
-│   │   │   └── BookingService.java                # ✅ MODIFIED - Thêm payment logic
+│   │   │   └── BookingService.java                # ✏️ BỔ SUNG - Thêm payment & refund logic
+│   │   │
+│   │   ├── model/
+│   │   │   └── Booking.java                       # ✅ CÓ SẴN
+│   │   │
+│   │   ├── repository/
+│   │   │   └── BookingRepository.java             # ✅ CÓ SẴN
 │   │   │
 │   │   └── controller/
-│   │       └── BookingController.java             # Existing - Không thay đổi
+│   │       └── BookingController.java             # ✅ CÓ SẴN - Không thay đổi
 │   │
 │   └── src/main/resources/
-│       └── application.properties                 # Existing
+│       └── application.properties                 # ✅ CÓ SẴN
 │
 └── PaymentService/
     ├── src/main/java/com/gomirai/payment/
     │   ├── controller/
-    │   │   ├── WalletController.java              # ✅ EXISTING - API lấy wallet info
-    │   │   └── PaymentInternalController.java     # ✅ EXISTING - Internal API
+    │   │   ├── WalletController.java              # ✅ CÓ SẴN - API lấy wallet info
+    │   │   └── PaymentInternalController.java     # ✅ CÓ SẴN - Internal API payRide/refund
     │   │
-    │   └── service/
-    │       └── WalletServiceImpl.java             # ✅ EXISTING - payRide, refundRide logic
+    │   ├── service/
+    │   │   └── WalletServiceImpl.java             # ✅ CÓ SẴN - Logic payRide, refundRide
+    │   │
+    │   ├── model/
+    │   │   ├── Wallet.java                        # ✅ CÓ SẴN
+    │   │   └── Transaction.java                   # ✅ CÓ SẴN
+    │   │
+    │   └── repository/
+    │       ├── WalletRepository.java              # ✅ CÓ SẴN
+    │       └── TransactionRepository.java         # ✅ CÓ SẴN
     │
     └── src/main/resources/
-        └── application.properties                 # Existing
+        └── application.properties                 # ✅ CÓ SẴN
 ```
 
 ### Frontend Structure
@@ -89,22 +108,47 @@ GoMirai/
 GoMirai_fe/
 ├── src/
 │   ├── components/
-│   │   ├── VehicleSelectionModal.jsx              # ✅ MODIFIED - Tích hợp payment selector
-│   │   ├── VehicleSelectionModal.css              # Existing
-│   │   ├── PaymentMethodSelector.jsx              # ✅ NEW - Component chọn payment
-│   │   └── PaymentMethodSelector.css              # ✅ NEW - Styling payment selector
+│   │   ├── VehicleSelectionModal.jsx              # ✏️ BỔ SUNG - Tích hợp payment selector
+│   │   ├── VehicleSelectionModal.css              # ✅ CÓ SẴN
+│   │   ├── PaymentMethodSelector.jsx              # 🆕 TẠO MỚI - Component chọn payment
+│   │   └── PaymentMethodSelector.css              # 🆕 TẠO MỚI - Styling payment selector
 │   │
 │   ├── api/
-│   │   ├── booking.api.js                         # ✅ EXISTING - createBooking API
-│   │   └── wallet.api.js                          # ✅ EXISTING - getWallet, topUp API
+│   │   ├── booking.api.js                         # ✅ CÓ SẴN - createBooking, cancelBooking
+│   │   └── wallet.api.js                          # ✅ CÓ SẴN - getWallet, topUp
 │   │
 │   ├── pages/
+│   │   ├── HomePage/
+│   │   │   └── HomePage.jsx                       # ✅ CÓ SẴN
+│   │   ├── ActivityPage/
+│   │   │   └── ActivityPage.jsx                   # ✅ CÓ SẴN
 │   │   └── PaymentPage/
-│   │       └── PaymentPage.jsx                    # ✅ EXISTING - Trang nạp tiền
+│   │       ├── PaymentPage.jsx                    # ✅ CÓ SẴN - Trang nạp tiền
+│   │       └── index.jsx                          # ✅ CÓ SẴN
 │   │
 │   └── router/
-│       └── AppRouter.jsx                          # ✅ EXISTING - Route /payment
+│       └── AppRouter.jsx                          # ✅ CÓ SẴN - Route /payment
 ```
+
+### Tổng Kết Files
+
+**Backend:**
+- 🆕 **Tạo mới:** 4 files
+  - `PaymentServiceClient.java`
+  - `RidePaymentRequest.java`
+  - `RefundRequest.java`
+  - `TransactionResponse.java`
+- ✏️ **Bổ sung:** 1 file
+  - `BookingService.java`
+- ✅ **Có sẵn (sử dụng):** PaymentService endpoints, DTOs, repositories
+
+**Frontend:**
+- 🆕 **Tạo mới:** 2 files
+  - `PaymentMethodSelector.jsx`
+  - `PaymentMethodSelector.css`
+- ✏️ **Bổ sung:** 1 file
+  - `VehicleSelectionModal.jsx`
+- ✅ **Có sẵn (sử dụng):** `wallet.api.js`, `booking.api.js`, `PaymentPage.jsx`
 
 ---
 
