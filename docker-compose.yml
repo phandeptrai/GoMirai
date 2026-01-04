@@ -89,6 +89,7 @@ services:
     restart: on-failure
 
   # Nginx Reverse Proxy
+  # Using static config with Docker DNS resolver
   nginx:
     image: nginx:alpine
     container_name: nginx
@@ -144,6 +145,9 @@ services:
       SPRING_CLOUD_CONSUL_HOST: consul
       SPRING_CLOUD_CONSUL_PORT: 8500
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      # Google OAuth
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
     networks:
       - gomirai-network
     restart: on-failure
@@ -216,6 +220,11 @@ services:
       SPRING_CLOUD_CONSUL_HOST: consul
       SPRING_CLOUD_CONSUL_PORT: 8500
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      # VNPay Configuration
+      VNPAY_TMN_CODE: ${VNPAY_TMN_CODE}
+      VNPAY_HASH_SECRET: ${VNPAY_HASH_SECRET}
+      VNPAY_PAYMENT_URL: ${VNPAY_PAYMENT_URL:-https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
+      VNPAY_RETURN_URL: ${VNPAY_RETURN_URL:-http://localhost:3000/payment/vnpay/result}
     networks:
       - gomirai-network
     restart: on-failure

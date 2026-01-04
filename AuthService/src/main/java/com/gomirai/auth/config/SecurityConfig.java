@@ -44,7 +44,7 @@ public class SecurityConfig {
     private long maxAge;
 
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
-                         RateLimitingFilter rateLimitingFilter) {
+            RateLimitingFilter rateLimitingFilter) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.rateLimitingFilter = rateLimitingFilter;
     }
@@ -52,32 +52,32 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-            // CSRF disabled for REST API with JWT
-            .csrf(csrf -> csrf.disable())
-            
-            // Stateless session
-            .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            
-            // CORS configuration
-            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-            
-            // Authorization
-            .authorizeHttpRequests(reg -> reg
-                .requestMatchers("/actuator/health").permitAll()  // Only health
-                .requestMatchers(HttpMethod.POST, "/auth/register", "/auth/login").permitAll()
-                .requestMatchers(HttpMethod.POST, "/auth/validate").permitAll()
-                .anyRequest().authenticated()
-            )
-            
-            // Add Rate Limiting Filter BEFORE JWT filter
-            .addFilterBefore(rateLimitingFilter, UsernamePasswordAuthenticationFilter.class)
-            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                // CSRF disabled for REST API with JWT
+                .csrf(csrf -> csrf.disable())
+
+                // Stateless session
+                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+
+                // CORS configuration
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+
+                // Authorization
+                .authorizeHttpRequests(reg -> reg
+                        .requestMatchers("/actuator/health").permitAll() // Only health
+                        .requestMatchers(HttpMethod.POST, "/auth/register", "/auth/login", "/auth/google").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/auth/validate").permitAll()
+                        .anyRequest().authenticated())
+
+                // Add Rate Limiting Filter BEFORE JWT filter
+                .addFilterBefore(rateLimitingFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         // Security headers
         http.headers(headers -> headers
-            .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'"))
-            .frameOptions(frame -> frame.deny())
-            .xssProtection(xss -> {})  // XSS Protection deprecated in Spring Security 6.1+
+                .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'"))
+                .frameOptions(frame -> frame.deny())
+                .xssProtection(xss -> {
+                }) // XSS Protection deprecated in Spring Security 6.1+
         );
 
         return http.build();
@@ -86,21 +86,21 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        
+
         // ✅ Read from application.properties - AuthService chỉ cho phép ApiGateway
         configuration.setAllowedOrigins(Arrays.asList(allowedOrigins.split(",")));
         configuration.setAllowedMethods(Arrays.asList(allowedMethods.split(",")));
-        
+
         if ("*".equals(allowedHeaders)) {
             configuration.setAllowedHeaders(Arrays.asList("*"));
         } else {
             configuration.setAllowedHeaders(Arrays.asList(allowedHeaders.split(",")));
         }
-        
+
         configuration.setExposedHeaders(Arrays.asList(exposedHeaders.split(",")));
         configuration.setAllowCredentials(allowCredentials);
         configuration.setMaxAge(maxAge);
-        
+
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;

@@ -37,6 +37,11 @@ public class SecurityConfig {
                         // Trong thực tế, nên check Role INTERNAL_SERVICE hoặc IP whitelist
                         .requestMatchers("/api/payment/internal/**").permitAll()
 
+                        // ➡️ VNPay callback endpoints - PHẢI PUBLIC vì VNPay server gọi trực tiếp
+                        // và user được redirect từ VNPay về đây
+                        .requestMatchers("/api/payment/vnpay/callback").permitAll()
+                        .requestMatchers("/api/payment/vnpay/return").permitAll()
+
                         // Các API liên quan đến ví cá nhân yêu cầu phải có Token hợp lệ
                         .requestMatchers("/api/payment/**", "/api/payment/transactions/**").authenticated()
 

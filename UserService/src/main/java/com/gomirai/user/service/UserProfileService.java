@@ -64,12 +64,42 @@ public class UserProfileService {
         return mapToResponse(saved);
     }
 
+    /**
+     * Create user profile from OAuth registration event.
+     * OAuth users have email and fullName but may not have phone number.
+     * 
+     * @param userId       User ID
+     * @param email        Email from OAuth provider
+     * @param fullName     Full name from OAuth provider (optional)
+     * @param authProvider The OAuth provider (GOOGLE, FACEBOOK, etc.)
+     */
+    @Transactional
+    public UserProfileResponse createOAuthUserProfile(UUID userId, String email, String fullName, String authProvider) {
+        if (userProfileRepository.existsByUserId(userId)) {
+            log.warn("User profile already exists for userId: {}, skipping creation", userId);
+            return getUserProfile(userId);
+        }
+
+        UserProfile profile = new UserProfile();
+        profile.setUserId(userId);
+        profile.setEmail(email); // Email from OAuth provider
+        profile.setFullName(fullName); // Full name from OAuth provider
+        profile.setPhone(null); // OAuth users may not have phone initially
+        profile.setAddress(null);
+        profile.setDateOfBirth(null);
+
+        UserProfile saved = userProfileRepository.save(profile);
+        log.info("Created OAuth ({}) user profile for userId: {} with email: {}",
+                authProvider, userId, email);
+        return mapToResponse(saved);
+    }
+
     public UserProfileResponse getUserProfile(UUID userId) {
         return userProfileRepository.findByUserId(userId)
-            .map(this::mapToResponse)
-            .orElseGet(() -> createPendingProfileResponse(userId));
+                .map(this::mapToResponse)
+                .orElseGet(() -> createPendingProfileResponse(userId));
     }
-    
+
     private UserProfileResponse createPendingProfileResponse(UUID userId) {
         log.info("Profile not found for userId: {}, returning PENDING status", userId);
         UserProfileResponse response = new UserProfileResponse();
@@ -80,14 +110,14 @@ public class UserProfileService {
 
     public List<UserProfileResponse> getAllUserProfiles() {
         return userProfileRepository.findAll().stream()
-            .map(this::mapToResponse)
-            .collect(Collectors.toList());
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
     }
 
     @Transactional
     public UserProfileResponse updateUserProfile(UUID userId, UpdateUserProfileRequest request) {
         UserProfile profile = userProfileRepository.findByUserId(userId)
-            .orElseThrow(() -> new IllegalArgumentException("User profile not found for userId: " + userId));
+                .orElseThrow(() -> new IllegalArgumentException("User profile not found for userId: " + userId));
 
         if (request.getFullName() != null) {
             profile.setFullName(request.getFullName());
@@ -122,20 +152,19 @@ public class UserProfileService {
     private UserProfileResponse mapToResponse(UserProfile profile) {
         UserProfileResponse.ProfileStatus status = determineProfileStatus(profile);
         return new UserProfileResponse(
-            profile.getUserId(),
-            profile.getFullName(),
-            profile.getPhone(),
-            profile.getEmail(),
-            profile.getAddress(),
-            profile.getDateOfBirth(),
-            status
-        );
+                profile.getUserId(),
+                profile.getFullName(),
+                profile.getPhone(),
+                profile.getEmail(),
+                profile.getAddress(),
+                profile.getDateOfBirth(),
+                status);
     }
-    
+
     private UserProfileResponse.ProfileStatus determineProfileStatus(UserProfile profile) {
         boolean hasFullName = profile.getFullName() != null && !profile.getFullName().isEmpty();
         boolean hasEmail = profile.getEmail() != null && !profile.getEmail().isEmpty();
-        
+
         if (hasFullName && hasEmail) {
             return UserProfileResponse.ProfileStatus.COMPLETE;
         } else {
@@ -143,5 +172,3 @@ public class UserProfileService {
         }
     }
 }
-
-

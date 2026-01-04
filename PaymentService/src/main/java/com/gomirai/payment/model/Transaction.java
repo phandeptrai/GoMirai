@@ -22,5 +22,6 @@ public class Transaction {
     private String direction; // IN | OUT
     private String type; // TOP_UP | RIDE_PAYMENT | REFUND
     private String status; // SUCCESS | FAILED
+    private String description; // Optional: transaction description/reason
     private LocalDateTime createdAt;
 }
