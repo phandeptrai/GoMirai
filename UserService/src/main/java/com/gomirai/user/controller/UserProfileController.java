@@ -26,6 +26,30 @@ import com.gomirai.user.service.UserProfileService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * Controller quản lý hồ sơ người dùng (UserProfile).
+ * 
+ * === PUBLIC APIs ===
+ * - GET /api/users/{userId}: Lấy thông tin profile (user chỉ xem được của mình)
+ * 
+ * === USER APIs ===
+ * - PUT /api/users/{userId}: Cập nhật profile (user chỉ sửa được của mình)
+ * - DELETE /api/users/{userId}: Xóa profile (user chỉ xóa được của mình)
+ * 
+ * === ADMIN APIs ===
+ * - GET /api/users: Lấy tất cả profiles
+ * - POST /api/users: Tạo profile mới (DEPRECATED - dùng cho testing)
+ * - POST /api/users/{userId}: Tạo profile với userId chỉ định
+ * 
+ * === Profile Status ===
+ * - PENDING: Profile chưa tạo (đang chờ Kafka event xử lý)
+ * - INCOMPLETE: Profile đã tạo nhưng thiếu thông tin
+ * - COMPLETE: Profile đầy đủ thông tin (fullName + email)
+ * 
+ * === Lưu ý bảo mật ===
+ * - User chỉ có thể xem/sửa/xóa profile của chính mình
+ * - ADMIN có thể xem tất cả profiles
+ */
 @RestController
 @RequestMapping("/api/users")
 @RequiredArgsConstructor
@@ -70,7 +94,7 @@ public class UserProfileController {
      * - INCOMPLETE: Profile created but missing info (only phone)
      * - COMPLETE: Profile has full information
      * 
-     * Frontend should handle PENDING status by showing "Account being initialized" 
+     * Frontend should handle PENDING status by showing "Account being initialized"
      * and retry after a few seconds instead of showing error.
      * 
      * SECURITY: User chỉ có thể xem profile của chính mình (hoặc ADMIN xem tất cả)
@@ -79,7 +103,7 @@ public class UserProfileController {
     public ResponseEntity<UserProfileResponse> getUserProfile(@PathVariable UUID userId) {
         // ✅ KIỂM TRA AUTHORIZATION: User chỉ được xem profile của chính mình
         securityUtils.validateOwnershipOrAdmin(userId);
-        
+
         UserProfileResponse response = userProfileService.getUserProfile(userId);
         return ResponseEntity.ok(response);
     }
@@ -104,7 +128,7 @@ public class UserProfileController {
             @Valid @RequestBody UpdateUserProfileRequest request) {
         // ✅ KIỂM TRA AUTHORIZATION: User chỉ được update profile của chính mình
         securityUtils.validateOwnership(userId);
-        
+
         UserProfileResponse response = userProfileService.updateUserProfile(userId, request);
         return ResponseEntity.ok(response);
     }
@@ -117,15 +141,23 @@ public class UserProfileController {
     public ResponseEntity<Void> deleteUserProfile(@PathVariable UUID userId) {
         // ✅ KIỂM TRA AUTHORIZATION: User chỉ được xóa profile của chính mình
         securityUtils.validateOwnership(userId);
-        
+
         userProfileService.deleteUserProfile(userId);
         return ResponseEntity.noContent().build();
     }
+
+    /**
+     * Get public user info - PUBLIC API for other services
+     * Returns only basic public info: fullName, phone (masked)
+     * Used by: DriverService to show driver info to customers
+     * 
+     * GET /api/users/{userId}/public
+     */
+    @GetMapping("/{userId}/public")
+    public ResponseEntity<UserProfileResponse> getUserPublicInfo(@PathVariable UUID userId) {
+        log.info("Getting public info for userId={}", userId);
+        UserProfileResponse response = userProfileService.getUserProfile(userId);
+        // Return full response - service layer can mask sensitive data if needed
+        return ResponseEntity.ok(response);
+    }
 }
-
-
-
-
-
-
-

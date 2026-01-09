@@ -1,6 +1,9 @@
 package com.gomirai.auth.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 /**
  * Request DTO for Google OAuth authentication.
@@ -8,6 +11,9 @@ import jakarta.validation.constraints.NotBlank;
  * The client sends the Google ID token (obtained from Google Sign-In SDK)
  * to this endpoint for server-side verification.
  */
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 public class GoogleAuthRequest {
 
     /**
@@ -16,19 +22,4 @@ public class GoogleAuthRequest {
      */
     @NotBlank(message = "Google ID token is required")
     private String idToken;
-
-    public GoogleAuthRequest() {
-    }
-
-    public GoogleAuthRequest(String idToken) {
-        this.idToken = idToken;
-    }
-
-    public String getIdToken() {
-        return idToken;
-    }
-
-    public void setIdToken(String idToken) {
-        this.idToken = idToken;
-    }
 }

@@ -1,4 +1,5 @@
 package com.gomirai.payment.service;
+
 import com.gomirai.common.dto.event.UserRegisteredEvent;
 import com.gomirai.payment.model.Wallet;
 import com.gomirai.payment.repository.WalletRepository;
@@ -9,11 +10,23 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+/**
+ * Kafka Consumer xử lý sự kiện đăng ký user mới.
+ * 
+ * Topic lắng nghe: user-registered
+ * Producer: AuthService
+ * 
+ * Luồng xử lý:
+ * Khi user đăng ký → tự động tạo Wallet với balance = 0
+ */
 @Service
 @Slf4j
 public class UserKafkaConsumer {
     private final WalletRepository walletRepository;
-    public UserKafkaConsumer(WalletRepository walletRepository) { this.walletRepository = walletRepository; }
+
+    public UserKafkaConsumer(WalletRepository walletRepository) {
+        this.walletRepository = walletRepository;
+    }
 
     @KafkaListener(topics = "user-registered", groupId = "payment-service-group")
     public void handleUserCreated(UserRegisteredEvent event) {

@@ -12,7 +12,6 @@ WORKDIR /workspace/PaymentService
 COPY PaymentService/pom.xml .
 COPY PaymentService/mvnw .
 COPY PaymentService/.mvn ./.mvn
-RUN ./mvnw dependency:go-offline -B
 
 COPY PaymentService/src ./src
 RUN ./mvnw clean package -DskipTests

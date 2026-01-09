@@ -17,7 +17,7 @@ import java.util.Arrays;
 
 @Configuration
 @EnableWebSecurity
-@EnableMethodSecurity(prePostEnabled = true)  // Enable @PreAuthorize annotation
+@EnableMethodSecurity(prePostEnabled = true) // Enable @PreAuthorize annotation
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtFilter;
@@ -49,55 +49,56 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-            // CSRF disabled for REST API with JWT
-            .csrf(csrf -> csrf.disable())
-            
-            // Stateless session
-            .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            
-            // CORS configuration
-            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-            
-            // Exception handling
-            .exceptionHandling(ex -> ex.authenticationEntryPoint(authEntryPoint))
-            
-            // Authorization
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/actuator/health").permitAll()  // Only health endpoint
-                .anyRequest().authenticated()
-            )
-            
-            // JWT filter
-            .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
+                // CSRF disabled for REST API with JWT
+                .csrf(csrf -> csrf.disable())
+
+                // Stateless session
+                .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+
+                // CORS configuration
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+
+                // Exception handling
+                .exceptionHandling(ex -> ex.authenticationEntryPoint(authEntryPoint))
+
+                // Authorization
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/actuator/health").permitAll() // Only health endpoint
+                        .requestMatchers("/api/users/*/public").permitAll() // Public user info for other services
+                        .anyRequest().authenticated())
+
+                // JWT filter
+                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         // ✅ Security headers
         http.headers(headers -> headers
-            .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'"))
-            .frameOptions(frame -> frame.deny())
-            .xssProtection(xss -> {})  // XSS Protection deprecated in Spring Security 6.1+
+                .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'"))
+                .frameOptions(frame -> frame.deny())
+                .xssProtection(xss -> {
+                }) // XSS Protection deprecated in Spring Security 6.1+
         );
-        
+
         return http.build();
     }
 
     @Bean
     public org.springframework.web.cors.CorsConfigurationSource corsConfigurationSource() {
         org.springframework.web.cors.CorsConfiguration configuration = new org.springframework.web.cors.CorsConfiguration();
-        
+
         // ✅ Read from application.properties - UserService chỉ cho phép ApiGateway
         configuration.setAllowedOrigins(Arrays.asList(allowedOrigins.split(",")));
         configuration.setAllowedMethods(Arrays.asList(allowedMethods.split(",")));
-        
+
         if ("*".equals(allowedHeaders)) {
             configuration.setAllowedHeaders(Arrays.asList("*"));
         } else {
             configuration.setAllowedHeaders(Arrays.asList(allowedHeaders.split(",")));
         }
-        
+
         configuration.setExposedHeaders(Arrays.asList(exposedHeaders.split(",")));
         configuration.setAllowCredentials(allowCredentials);
         configuration.setMaxAge(maxAge);
-        
+
         org.springframework.web.cors.UrlBasedCorsConfigurationSource source = new org.springframework.web.cors.UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;

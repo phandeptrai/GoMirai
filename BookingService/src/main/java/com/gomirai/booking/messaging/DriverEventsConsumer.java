@@ -12,6 +12,15 @@ import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Component;
 
+/**
+ * Kafka Consumer xử lý các sự kiện từ tài xế.
+ * 
+ * Topics lắng nghe:
+ * - driver.accepted: Tài xế nhận cuốc → cập nhật booking thành MATCHED
+ * - driver.declined: Tài xế từ chối cuốc → có thể tìm tài xế khác
+ * 
+ * Producer: DriverService (khi tài xế accept/decline qua REST hoặc WebSocket)
+ */
 @Component
 @RequiredArgsConstructor
 @Slf4j

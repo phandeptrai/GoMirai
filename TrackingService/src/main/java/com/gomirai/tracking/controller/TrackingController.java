@@ -14,6 +14,21 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Controller theo dõi vị trí tài xế theo thời gian thực.
+ * 
+ * === DRIVER APIs ===
+ * - POST /api/tracking/location: Cập nhật vị trí GPS của tài xế
+ * - GET /api/tracking/me: Lấy vị trí hiện tại của chính mình
+ * 
+ * === CUSTOMER/AUTHENTICATED APIs ===
+ * - POST /api/tracking/nearby: Tìm tài xế lân cận (trong bán kính)
+ * - GET /api/tracking/drivers/{driverId}: Lấy vị trí của một tài xế cụ thể
+ * 
+ * Công nghệ sử dụng:
+ * - Redis Geo: Lưu trữ và tìm kiếm theo tọa độ GPS
+ * - TTL 5 phút: Tài xế không cập nhật vị trí sẽ tự động mất khỏi bản đồ
+ */
 @RestController
 @RequestMapping("/api/tracking")
 @RequiredArgsConstructor

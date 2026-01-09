@@ -20,6 +20,32 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * Cấu hình bảo mật cho API Gateway.
+ * 
+ * === KIẾN TRÚC BẢO MẬT ===
+ * API Gateway là single entry point cho tất cả requests từ client.
+ * - Xác thực JWT tập trung tại đây
+ * - Các microservices phía sau tin tưởng Gateway
+ * - Gateway forward userId trong header X-User-Id
+ * 
+ * === CẤU HÌNH CHÍNH ===
+ * 1. CSRF: Disabled vì đây là REST API stateless với JWT
+ * 2. Session: STATELESS - không lưu session trên server
+ * 3. CORS: Cấu hình từ application.yml, cho phép frontend gọi API
+ * 4. JWT Filter: Xác thực token trước mỗi request
+ * 
+ * === PUBLIC ENDPOINTS (không cần JWT) ===
+ * - /actuator/health, /health/**: Health check
+ * - /ws/**: WebSocket handshake
+ * - /api/auth/register, login, google: Đăng ký/đăng nhập
+ * - /api/pricing/estimate: Tính giá trước khi đặt
+ * - /api/review/reviewee/**: Xem review công khai
+ * - /api/payment/vnpay/callback, return: VNPay callback (VNPay server gọi)
+ * 
+ * === CÁC REQUEST KHÁC ===
+ * Tất cả requests khác cần JWT hợp lệ trong header Authorization
+ */
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {

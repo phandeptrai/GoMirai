@@ -8,6 +8,12 @@ import com.gomirai.common.dto.event.DriverApprovedEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * Kafka Producer gửi sự kiện khi admin duyệt đơn đăng ký tài xế.
+ * 
+ * Topic: driver-approval-events
+ * Consumer: AuthService (cập nhật role từ CUSTOMER → DRIVER)
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor

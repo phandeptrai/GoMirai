@@ -12,7 +12,6 @@ WORKDIR /workspace/UserService
 COPY UserService/pom.xml .
 COPY UserService/mvnw .
 COPY UserService/.mvn ./.mvn
-RUN ./mvnw dependency:go-offline -B
 
 # Copy source and build
 COPY UserService/src ./src

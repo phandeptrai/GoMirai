@@ -18,6 +18,29 @@ import com.gomirai.user.repository.UserProfileRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * Service quản lý hồ sơ người dùng (UserProfile).
+ * 
+ * Các chức năng chính:
+ * 1. createEmptyUserProfile: Tạo profile rỗng khi user đăng ký LOCAL (chỉ có
+ * phone)
+ * 2. createOAuthUserProfile: Tạo profile khi user đăng ký qua OAuth (có email,
+ * fullName)
+ * 3. getUserProfile: Lấy thông tin profile, trả về PENDING nếu chưa có
+ * 4. updateUserProfile: Cập nhật thông tin profile
+ * 
+ * Profile Status:
+ * - PENDING: Profile chưa được tạo (đang chờ Kafka event từ AuthService)
+ * - INCOMPLETE: Profile đã tạo nhưng thiếu thông tin bắt buộc
+ * - COMPLETE: Profile đầy đủ thông tin (fullName + email)
+ * 
+ * Luồng tạo profile:
+ * 1. User đăng ký tại AuthService
+ * 2. AuthService publish UserRegisteredEvent qua Kafka
+ * 3. Consumer trong UserService nhận event
+ * 4. Gọi createEmptyUserProfile hoặc createOAuthUserProfile
+ * 5. User có thể bổ sung thông tin qua updateUserProfile
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j

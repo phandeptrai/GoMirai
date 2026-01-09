@@ -27,6 +27,7 @@ import org.springframework.dao.DuplicateKeyException;
 public class ReviewService {
 
     private final ReviewRepository repository;
+    private final com.gomirai.review.messaging.DriverRatingEventsProducer driverRatingEventsProducer;
 
     public ReviewResponse createReview(CreateReviewRequest request, UUID reviewerId) {
 
@@ -54,11 +55,37 @@ public class ReviewService {
         // 4. Lưu vào DB và BẮT LỖI TRÙNG LẶP CỨNG TỪ DB (DuplicateKeyException)
         try {
             Review savedReview = repository.save(review);
+
+            // 5. Tính rating trung bình mới và publish event đến DriverService
+            publishDriverRatingUpdate(request.getRevieweeId(), request.getBookingId());
+
             return mapToResponse(savedReview);
         } catch (DuplicateKeyException e) {
             // Trường hợp kiểm tra trước bị bỏ sót (ví dụ: lỗi mạng thoáng qua)
             // hoặc logic kiểm tra index bị lỗi. Bắt lỗi DB và chuyển thành lỗi nghiệp vụ.
             throw new BusinessException(ReviewErrorCode.REVIEW_ALREADY_EXISTS, e);
+        }
+    }
+
+    /**
+     * Tính rating trung bình và publish event đến DriverService
+     */
+    private void publishDriverRatingUpdate(UUID driverUserId, UUID bookingId) {
+        try {
+            // Lấy rating summary mới
+            RatingSummaryResponse summary = getRatingSummary(driverUserId);
+
+            // Publish event
+            driverRatingEventsProducer.publishDriverRatingUpdated(
+                    driverUserId,
+                    summary.getAverageRating(),
+                    summary.getTotalReviews(),
+                    bookingId);
+        } catch (Exception e) {
+            // Log error but don't fail the review creation
+            // Rating update is eventually consistent
+            org.slf4j.LoggerFactory.getLogger(getClass())
+                    .warn("Failed to publish driver rating update: {}", e.getMessage());
         }
     }
 
@@ -98,7 +125,8 @@ public class ReviewService {
 
     /**
      * Check if a booking has been reviewed (by any user).
-     * This is used to prevent duplicate reviews and to show/hide review button in frontend.
+     * This is used to prevent duplicate reviews and to show/hide review button in
+     * frontend.
      */
     public boolean checkReviewExistsByBookingId(UUID bookingId) {
         return repository.existsByBookingId(bookingId);

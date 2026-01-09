@@ -14,4 +14,6 @@ public interface WalletService {
     TransactionResponse payRide(RidePaymentRequest request);
 
     TransactionResponse refundRide(UUID bookingId, BigDecimal amount);
+
+    TransactionResponse depositEarnings(UUID driverId, UUID bookingId, BigDecimal amount);
 }

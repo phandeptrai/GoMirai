@@ -12,7 +12,6 @@ WORKDIR /workspace/AuthService
 COPY AuthService/pom.xml .
 COPY AuthService/mvnw .
 COPY AuthService/.mvn ./.mvn
-RUN ./mvnw dependency:go-offline -B
 
 # Copy source and build
 COPY AuthService/src ./src

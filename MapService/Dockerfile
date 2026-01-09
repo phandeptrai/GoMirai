@@ -12,7 +12,6 @@ WORKDIR /workspace/MapService
 COPY MapService/pom.xml .
 COPY MapService/mvnw .
 COPY MapService/.mvn ./.mvn
-RUN ./mvnw dependency:go-offline -B
 
 # 3. Copy Source & Package
 COPY MapService/src ./src

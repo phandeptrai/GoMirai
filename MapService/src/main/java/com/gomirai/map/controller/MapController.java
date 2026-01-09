@@ -11,6 +11,11 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+/**
+ * Controller xử lý các API bản đồ (tích hợp Mapbox).
+ * 
+ * Chức năng: Tính route, geocoding, tìm kiếm địa điểm, ma trận khoảng cách.
+ */
 @RestController
 @RequestMapping("/api/map")
 @RequiredArgsConstructor
@@ -81,10 +86,9 @@ public class MapController {
     @PostMapping("/distance-matrix")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<DistanceMatrixResponse> getDistanceMatrix(@RequestBody @Valid DistanceMatrixRequest request) {
-        log.info("Calculating distance matrix: {} origins, {} destinations", 
+        log.info("Calculating distance matrix: {} origins, {} destinations",
                 request.getOrigins().size(), request.getDestinations().size());
         DistanceMatrixResponse response = mapboxService.getDistanceMatrix(request);
         return ResponseEntity.ok(response);
     }
 }
-

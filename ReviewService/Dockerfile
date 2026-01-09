@@ -12,7 +12,6 @@ WORKDIR /workspace/ReviewService
 COPY ReviewService/pom.xml .
 COPY ReviewService/mvnw .
 COPY ReviewService/.mvn ./.mvn
-RUN ./mvnw dependency:go-offline -B
 
 COPY ReviewService/src ./src
 RUN ./mvnw clean package -DskipTests

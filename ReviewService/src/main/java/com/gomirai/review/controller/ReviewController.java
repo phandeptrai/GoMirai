@@ -21,6 +21,11 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * Controller quản lý đánh giá (Review) sau chuyến đi.
+ * 
+ * Chức năng: Tạo review, lấy danh sách review, lấy rating summary.
+ */
 @RestController
 @RequestMapping("/api/review")
 @RequiredArgsConstructor

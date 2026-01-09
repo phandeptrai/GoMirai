@@ -12,7 +12,6 @@ WORKDIR /workspace/ApiGateway
 COPY ApiGateway/pom.xml .
 COPY ApiGateway/mvnw .
 COPY ApiGateway/.mvn ./.mvn
-RUN ./mvnw dependency:go-offline -B
 
 # Copy source and build
 COPY ApiGateway/src ./src

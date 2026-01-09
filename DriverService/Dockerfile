@@ -11,7 +11,6 @@ WORKDIR /workspace/DriverService
 COPY DriverService/pom.xml .
 COPY DriverService/mvnw .
 COPY DriverService/.mvn ./.mvn
-RUN ./mvnw dependency:go-offline -B
 
 COPY DriverService/src ./src
 RUN ./mvnw clean package -DskipTests

@@ -34,22 +34,22 @@ public class SecurityConfig {
 	@Bean
 	public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
 		http
-			.csrf(csrf -> csrf.disable())
-			.sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-			.cors(cors -> cors.configurationSource(corsConfigurationSource()))
-			.exceptionHandling(ex -> ex.authenticationEntryPoint(authenticationEntryPoint))
-			.authorizeHttpRequests(authorize -> authorize
-				.requestMatchers("/actuator/health").permitAll()
-				// Allow WebSocket endpoints without authentication
-				.requestMatchers("/ws/**").permitAll()
-				.anyRequest().authenticated()
-			)
-			.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+				.csrf(csrf -> csrf.disable())
+				.sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+				.cors(cors -> cors.configurationSource(corsConfigurationSource()))
+				.exceptionHandling(ex -> ex.authenticationEntryPoint(authenticationEntryPoint))
+				.authorizeHttpRequests(authorize -> authorize
+						.requestMatchers("/actuator/health").permitAll()
+						// Allow WebSocket endpoints without authentication
+						.requestMatchers("/ws/**").permitAll()
+						// Public driver info for customer to view during trip
+						.requestMatchers("/api/drivers/user/*/public").permitAll()
+						.anyRequest().authenticated())
+				.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
 		http.headers(headers -> headers
-			.contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'"))
-			.frameOptions(frame -> frame.deny())
-		);
+				.contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'"))
+				.frameOptions(frame -> frame.deny()));
 
 		return http.build();
 	}
@@ -70,4 +70,3 @@ public class SecurityConfig {
 		return source;
 	}
 }
-

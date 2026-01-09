@@ -12,7 +12,6 @@ WORKDIR /workspace/BookingService
 COPY BookingService/pom.xml .
 COPY BookingService/mvnw .
 COPY BookingService/.mvn ./.mvn
-RUN ./mvnw dependency:go-offline -B
 
 # Copy source and build
 COPY BookingService/src ./src

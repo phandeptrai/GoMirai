@@ -25,9 +25,11 @@ import io.jsonwebtoken.Claims;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Main authentication service handling:
- * 1. LOCAL auth: phone + password registration/login
- * 2. Google OAuth: ID token verification and auto-registration
+ * Service chính xử lý logic xác thực.
+ * 
+ * Hỗ trợ 2 phương thức:
+ * 1. LOCAL: Đăng ký/đăng nhập bằng số điện thoại + mật khẩu
+ * 2. Google OAuth: Xác thực bằng Google ID Token
  */
 @Service
 @Slf4j
@@ -51,108 +53,135 @@ public class AuthApplicationService {
         this.googleOAuthService = googleOAuthService;
     }
 
+    /**
+     * Đăng ký tài khoản mới với số điện thoại và mật khẩu.
+     * 
+     * Luồng xử lý:
+     * 1. Kiểm tra số điện thoại đã tồn tại chưa (TRƯỚC transaction)
+     * 2. Tạo AuthUser mới với role CUSTOMER
+     * 3. Gửi event UserRegistered qua Kafka để các service khác xử lý
+     * 4. Tạo JWT token và trả về
+     */
     public AuthResponse register(RegisterRequest request) {
         // Kiểm tra trùng số điện thoại TRƯỚC khi bắt đầu transaction
+        // Điều này giúp tránh lock database không cần thiết
         if (authUserRepository.existsByPhoneNumber(request.getPhoneNumber())) {
             throw new BusinessException("Số điện thoại đã tồn tại");
         }
 
-        // Bắt đầu transaction chỉ khi cần save vào DB
         return registerInternal(request);
     }
 
+    /**
+     * Phần xử lý đăng ký trong transaction.
+     * Tách riêng để đảm bảo transaction chỉ bắt đầu khi thực sự cần save.
+     */
     @Transactional
     private AuthResponse registerInternal(RegisterRequest request) {
+        // Tạo user mới với thông tin cơ bản
         AuthUser user = new AuthUser();
         user.setUserId(UUID.randomUUID());
         user.setPhoneNumber(request.getPhoneNumber());
+        // Mã hóa mật khẩu bằng BCrypt trước khi lưu
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         user.setProvider(AuthProvider.LOCAL);
-        user.setRole(Role.CUSTOMER);
+        user.setRole(Role.CUSTOMER); // Mặc định là CUSTOMER
         AuthUser saved = authUserRepository.save(user);
 
+        // Gửi event để UserService tạo profile và PaymentService tạo wallet
         eventsProducer.sendUserRegistered(
                 new UserRegisteredEvent(saved.getUserId(), saved.getPhoneNumber(), saved.getRole().name()));
 
+        // Tạo JWT token chứa userId và role
         String token = jwtService.generateToken(saved.getUserId(), saved.getRole().name());
         return new AuthResponse(saved.getUserId(), saved.getRole().name(), token);
     }
 
+    /**
+     * Đăng nhập bằng số điện thoại và mật khẩu.
+     * 
+     * Luồng xử lý:
+     * 1. Tìm user theo số điện thoại
+     * 2. So sánh mật khẩu với hash đã lưu
+     * 3. Tạo JWT token và trả về
+     */
     public AuthResponse login(LoginRequest request) {
+        // Tìm user theo số điện thoại
         AuthUser user = authUserRepository.findByPhoneNumber(request.getPhoneNumber())
                 .orElseThrow(() -> new BusinessException("Thông tin đăng nhập không hợp lệ"));
+
+        // So sánh mật khẩu - passwordEncoder.matches() so sánh plaintext với hash
         if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+            // Trả về message chung để tránh lộ thông tin user tồn tại
             throw new BusinessException("Thông tin đăng nhập không hợp lệ");
         }
+
         String token = jwtService.generateToken(user.getUserId(), user.getRole().name());
         return new AuthResponse(user.getUserId(), user.getRole().name(), token);
     }
 
     /**
-     * Authenticate with Google OAuth.
+     * Xác thực bằng Google OAuth.
      * 
-     * Google OAuth performs AUTHENTICATION only - no distinction between
-     * "login" and "register" from the user's perspective.
+     * Google OAuth chỉ thực hiện XÁC THỰC (authentication):
+     * - Không phân biệt "đăng ký" hay "đăng nhập" từ góc nhìn người dùng
+     * - Nếu providerUserId đã tồn tại → đăng nhập
+     * - Nếu chưa tồn tại → tự động tạo tài khoản mới
      * 
-     * Flow:
-     * 1. Verify Google ID token
-     * 2. Check if user exists (by providerUserId)
-     * - If exists: treat as LOGIN, return JWT token
-     * - If not exists: AUTO-REGISTRATION
-     * - Create new AuthUser with Google info
-     * - Emit UserRegisteredEvent to UserService & PaymentService
-     * - Return JWT token
-     * 
-     * Note: OAuth users may not have phone number initially.
-     * They can add phone number later via profile update.
-     * 
-     * @param idToken Google ID token from client
-     * @return AuthResponse with JWT token and user info
+     * Luồng xử lý:
+     * 1. Xác thực Google ID Token với Google API
+     * 2. Lấy thông tin user từ token (email, name, picture)
+     * 3. Kiểm tra user đã tồn tại chưa (theo providerUserId)
+     * 4. Nếu có → đăng nhập, nếu không → đăng ký
+     * 5. Trả về JWT token của hệ thống
      */
     public AuthResponse authenticateWithGoogle(String idToken) {
-        log.info("Processing Google OAuth authentication");
+        log.info("Đang xử lý xác thực Google OAuth");
 
-        // Step 1: Verify token and get user info from Google
+        // Bước 1: Xác thực token và lấy thông tin user từ Google
         GoogleUserInfo googleUserInfo = googleOAuthService.verifyIdToken(idToken);
-        String providerUserId = googleUserInfo.getSub();
+        String providerUserId = googleUserInfo.getSub(); // Google user ID (sub claim)
 
-        log.info("Google token verified for user: {} (sub: {})",
+        log.info("Token Google đã xác thực cho email: {} (sub: {})",
                 googleUserInfo.getEmail(), providerUserId);
 
-        // Step 2: Check if user already exists with this Google account
+        // Bước 2: Kiểm tra user đã tồn tại với tài khoản Google này chưa
         Optional<AuthUser> existingUser = authUserRepository.findByProviderAndProviderUserId(
                 AuthProvider.GOOGLE, providerUserId);
 
         if (existingUser.isPresent()) {
-            // User exists - this is a LOGIN
-            log.info("Existing Google user found, performing login for userId: {}",
+            // User đã tồn tại → xử lý như ĐĂNG NHẬP
+            log.info("Tìm thấy user Google, thực hiện đăng nhập cho userId: {}",
                     existingUser.get().getUserId());
             return loginGoogleUser(existingUser.get(), googleUserInfo);
         } else {
-            // User doesn't exist - this is AUTO-REGISTRATION
-            log.info("New Google user, performing auto-registration for email: {}",
+            // User chưa tồn tại → TỰ ĐỘNG ĐĂNG KÝ
+            log.info("User Google mới, thực hiện tự động đăng ký cho email: {}",
                     googleUserInfo.getEmail());
             return registerGoogleUser(googleUserInfo);
         }
     }
 
     /**
-     * Login existing Google OAuth user.
-     * Updates user info from Google in case it changed (name, picture).
+     * Đăng nhập user Google đã tồn tại.
+     * Cập nhật thông tin từ Google nếu có thay đổi (tên, ảnh).
      */
     @Transactional
     private AuthResponse loginGoogleUser(AuthUser user, GoogleUserInfo googleUserInfo) {
-        // Update user info from Google (may have changed)
+        // Cập nhật thông tin user từ Google (có thể đã thay đổi)
         boolean updated = false;
 
+        // Cập nhật tên nếu khác
         if (googleUserInfo.getName() != null && !googleUserInfo.getName().equals(user.getFullName())) {
             user.setFullName(googleUserInfo.getName());
             updated = true;
         }
+        // Cập nhật ảnh đại diện nếu khác
         if (googleUserInfo.getPicture() != null && !googleUserInfo.getPicture().equals(user.getProfilePictureUrl())) {
             user.setProfilePictureUrl(googleUserInfo.getPicture());
             updated = true;
         }
+        // Cập nhật email nếu khác
         if (googleUserInfo.getEmail() != null && !googleUserInfo.getEmail().equals(user.getEmail())) {
             user.setEmail(googleUserInfo.getEmail());
             updated = true;
@@ -160,103 +189,110 @@ public class AuthApplicationService {
 
         if (updated) {
             authUserRepository.save(user);
-            log.info("Updated Google user info for userId: {}", user.getUserId());
+            log.info("Đã cập nhật thông tin user Google cho userId: {}", user.getUserId());
         }
 
         String token = jwtService.generateToken(user.getUserId(), user.getRole().name());
-        log.info("Google login successful for userId: {}", user.getUserId());
+        log.info("Đăng nhập Google thành công cho userId: {}", user.getUserId());
         return new AuthResponse(user.getUserId(), user.getRole().name(), token);
     }
 
     /**
-     * Auto-register new Google OAuth user.
-     * Creates AuthUser and emits UserRegisteredEvent for UserService &
-     * PaymentService.
+     * Tự động đăng ký user Google mới.
      * 
-     * Note: OAuth users don't have phone number initially.
-     * The UserRegisteredEvent includes email instead.
+     * Lưu ý: User OAuth không có số điện thoại ban đầu.
+     * Họ có thể thêm số điện thoại sau qua cập nhật profile.
      */
     @Transactional
     private AuthResponse registerGoogleUser(GoogleUserInfo googleUserInfo) {
-        // Create new AuthUser for Google OAuth
+        // Tạo AuthUser mới cho Google OAuth
         AuthUser user = new AuthUser();
         user.setUserId(UUID.randomUUID());
         user.setProvider(AuthProvider.GOOGLE);
-        user.setProviderUserId(googleUserInfo.getSub());
+        user.setProviderUserId(googleUserInfo.getSub()); // Google user ID
         user.setEmail(googleUserInfo.getEmail());
         user.setFullName(googleUserInfo.getName());
         user.setProfilePictureUrl(googleUserInfo.getPicture());
-        user.setRole(Role.CUSTOMER);
-        // phoneNumber and passwordHash are null for OAuth users
+        user.setRole(Role.CUSTOMER); // Mặc định là CUSTOMER
+        // phoneNumber và passwordHash là null cho user OAuth
 
         AuthUser saved = authUserRepository.save(user);
-        log.info("Created new Google OAuth user with userId: {}", saved.getUserId());
+        log.info("Đã tạo user Google OAuth mới với userId: {}", saved.getUserId());
 
-        // Emit UserRegisteredEvent for UserService and PaymentService
-        // Using the extended constructor with email and fullName for OAuth users
+        // Gửi event để UserService tạo profile và PaymentService tạo wallet
+        // Sử dụng constructor mở rộng với email và fullName cho user OAuth
         UserRegisteredEvent event = new UserRegisteredEvent(
                 saved.getUserId(),
-                null, // phoneNumber is null for OAuth users
+                null, // phoneNumber là null cho user OAuth
                 saved.getRole().name(),
                 saved.getEmail(),
                 saved.getFullName(),
                 AuthProvider.GOOGLE.name());
         eventsProducer.sendUserRegistered(event);
-        log.info("Emitted UserRegisteredEvent for Google OAuth user: {}", saved.getUserId());
+        log.info("Đã gửi event UserRegistered cho user Google OAuth: {}", saved.getUserId());
 
         String token = jwtService.generateToken(saved.getUserId(), saved.getRole().name());
-        log.info("Google auto-registration successful for userId: {}", saved.getUserId());
+        log.info("Tự động đăng ký Google thành công cho userId: {}", saved.getUserId());
         return new AuthResponse(saved.getUserId(), saved.getRole().name(), token);
     }
 
+    /**
+     * Xác thực JWT token.
+     * Trích xuất thông tin userId và role từ token.
+     */
     public TokenValidationResponse validate(String token) {
+        // Parse token và lấy claims
         Optional<Claims> claims = jwtService.parseToken(token);
         if (claims.isEmpty()) {
             return new TokenValidationResponse(false, null, null);
         }
+
         Claims c = claims.get();
-        UUID userId = UUID.fromString(c.getSubject());
-        String role = c.get("role", String.class);
+        UUID userId = UUID.fromString(c.getSubject()); // Subject chứa userId
+        String role = c.get("role", String.class); // Custom claim "role"
         return new TokenValidationResponse(true, userId, role);
     }
 
     /**
-     * Update user role to DRIVER
-     * Called when driver application is approved by admin
+     * Cập nhật role của user thành DRIVER.
+     * Được gọi khi đơn đăng ký tài xế được admin duyệt.
+     * 
+     * Lưu ý: User cần đăng nhập lại hoặc refresh token
+     * để lấy JWT mới với role DRIVER.
      */
     @Transactional
     public void updateUserRoleToDriver(UUID userId) {
         AuthUser user = authUserRepository.findById(userId)
-                .orElseThrow(() -> new BusinessException("User not found: " + userId));
+                .orElseThrow(() -> new BusinessException("Không tìm thấy user: " + userId));
 
+        // Nếu đã là DRIVER thì không cần cập nhật
         if (user.getRole() == Role.DRIVER) {
-            // Already a driver, no need to update
             return;
         }
 
         user.setRole(Role.DRIVER);
         authUserRepository.save(user);
-
-        // Note: User needs to login again to get new JWT token with DRIVER role
+        log.info("Đã cập nhật role thành DRIVER cho userId: {}", userId);
     }
 
     /**
-     * Refresh token to get current role from database
-     * Used when user role has been updated
+     * Làm mới token để lấy role hiện tại từ database.
+     * Dùng khi role của user đã được cập nhật.
      */
     public AuthResponse refreshToken(String oldToken) {
+        // Parse token cũ để lấy userId
         Optional<Claims> claims = jwtService.parseToken(oldToken);
         if (claims.isEmpty()) {
-            throw new BusinessException("Invalid token");
+            throw new BusinessException("Token không hợp lệ");
         }
 
         UUID userId = UUID.fromString(claims.get().getSubject());
 
-        // Get current role from database (may have been updated)
+        // Lấy role hiện tại từ database (có thể đã được cập nhật)
         AuthUser user = authUserRepository.findById(userId)
-                .orElseThrow(() -> new BusinessException("User not found"));
+                .orElseThrow(() -> new BusinessException("Không tìm thấy user"));
 
-        // Generate new token with current role
+        // Tạo token mới với role hiện tại
         String newToken = jwtService.generateToken(user.getUserId(), user.getRole().name());
         return new AuthResponse(user.getUserId(), user.getRole().name(), newToken);
     }

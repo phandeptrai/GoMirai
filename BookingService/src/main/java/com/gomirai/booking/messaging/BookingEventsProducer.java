@@ -11,6 +11,24 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
+/**
+ * Kafka Producer gửi các sự kiện liên quan đến Booking.
+ * 
+ * Topics:
+ * - booking.search_drivers: Yêu cầu tìm tài xế cho booking mới
+ * - booking.assigned: Booking đã được gán cho tài xế
+ * - booking.completed: Booking hoàn thành
+ * - booking-canceled-event: Booking bị hủy
+ * - booking.status.changed: Trạng thái booking thay đổi (cho
+ * NotificationService)
+ * - refund.requested: Yêu cầu hoàn tiền khi hủy booking đã thanh toán ví
+ * 
+ * Consumers:
+ * - TrackingService: booking.search_drivers, booking.assigned
+ * - DriverService: booking.search_drivers (gửi offer cho tài xế)
+ * - NotificationService: booking.status.changed
+ * - PaymentService: refund.requested
+ */
 @Component
 @RequiredArgsConstructor
 @Slf4j

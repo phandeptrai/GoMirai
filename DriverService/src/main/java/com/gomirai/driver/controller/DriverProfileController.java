@@ -33,6 +33,34 @@ import com.gomirai.driver.service.DriverProfileService;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * Controller quản lý hồ sơ tài xế.
+ * 
+ * === ĐĂNG KÝ TÀI XẾ ===
+ * - POST /api/drivers/apply: Gửi đơn đăng ký làm tài xế
+ * 
+ * === DRIVER APIs (tài xế đã được duyệt) ===
+ * - GET /api/drivers/me: Lấy thông tin profile của mình
+ * - PUT /api/drivers/me: Cập nhật profile
+ * - GET /api/drivers/me/vehicle: Lấy thông tin xe
+ * - PUT /api/drivers/me/vehicle: Cập nhật thông tin xe
+ * - PATCH /api/drivers/me/status/online: Bật chế độ nhận cuốc
+ * - PATCH /api/drivers/me/status/offline: Tắt chế độ nhận cuốc
+ * - GET /api/drivers/me/booking-offers: Lấy danh sách cuốc đang chờ
+ * - PATCH /api/drivers/me/booking-offers/{id}/reject: Từ chối cuốc
+ * 
+ * === PUBLIC APIs ===
+ * - GET /api/drivers/{driverId}: Lấy thông tin tài xế (cho customer xem)
+ * - GET /api/drivers/{driverId}/rating: Lấy rating của tài xế
+ * - GET /api/drivers/user/{userId}: Lấy profile theo userId
+ * 
+ * === ADMIN APIs ===
+ * - GET /api/drivers: Lấy danh sách tài xế theo status
+ * - PATCH /api/drivers/{id}/approve: Duyệt đơn đăng ký
+ * - PATCH /api/drivers/{id}/reject: Từ chối đơn đăng ký
+ * - PATCH /api/drivers/{id}/suspend: Khóa tài khoản
+ * - PATCH /api/drivers/{id}/unsuspend: Mở khóa tài khoản
+ */
 @Slf4j
 @Validated
 @RestController
@@ -101,12 +129,26 @@ public class DriverProfileController {
 	}
 
 	/**
-	 * Get driver profile by userId (useful when booking stores userId instead of driverId)
+	 * Get driver profile by userId (useful when booking stores userId instead of
+	 * driverId)
 	 * GET /api/drivers/user/{userId}
 	 */
 	@GetMapping("/user/{userId}")
 	public ResponseEntity<DriverProfileResponse> getProfileByUserId(@PathVariable("userId") UUID userId) {
 		return ResponseEntity.ok(driverProfileService.getProfileByUserId(userId));
+	}
+
+	/**
+	 * Get driver public info (aggregated from DriverService + UserService)
+	 * Returns: vehicle info, rating, driver name, phone
+	 * 
+	 * PUBLIC API - for customer to view driver info during trip
+	 * GET /api/drivers/user/{userId}/public
+	 */
+	@GetMapping("/user/{userId}/public")
+	public ResponseEntity<com.gomirai.driver.dto.response.DriverPublicInfoResponse> getDriverPublicInfo(
+			@PathVariable("userId") UUID userId) {
+		return ResponseEntity.ok(driverProfileService.getDriverPublicInfo(userId));
 	}
 
 	@GetMapping
@@ -149,19 +191,20 @@ public class DriverProfileController {
 	public ResponseEntity<List<DriverBookingOfferResponse>> getBookingOffers() {
 		UUID userId = securityUtils.getCurrentUserId();
 		log.info("=== API: Getting booking offers for userId={} ===", userId);
-		
+
 		// Get driverId from DriverProfile using userId
 		UUID driverId = driverProfileService.getDriverIdByUserId(userId);
 		if (driverId == null) {
 			log.warn("No driver profile found for userId={}", userId);
 			return ResponseEntity.ok(List.of());
 		}
-		
+
 		log.info("=== API: Found driverId={} for userId={} ===", driverId, userId);
 		List<DriverBookingOfferResponse> offers = driverBookingService.getActiveOffers(driverId);
 		log.info("=== API: Returning {} offers for driverId={} (userId={}) ===", offers.size(), driverId, userId);
 		if (offers.isEmpty()) {
-			log.warn("No offers found for driverId={} (userId={}) - check if events were received and saved", driverId, userId);
+			log.warn("No offers found for driverId={} (userId={}) - check if events were received and saved", driverId,
+					userId);
 		}
 		return ResponseEntity.ok(offers);
 	}
@@ -175,17 +218,16 @@ public class DriverProfileController {
 	public ResponseEntity<Void> rejectBookingOffer(@PathVariable UUID bookingId) {
 		UUID userId = securityUtils.getCurrentUserId();
 		log.info("Driver userId={} rejecting booking offer for bookingId={}", userId, bookingId);
-		
+
 		// Get driverId from DriverProfile using userId
 		UUID driverId = driverProfileService.getDriverIdByUserId(userId);
 		if (driverId == null) {
 			log.warn("No driver profile found for userId={}", userId);
 			return ResponseEntity.notFound().build();
 		}
-		
+
 		driverBookingService.deactivateOffer(bookingId, driverId);
 		log.info("Successfully deactivated offer for bookingId={}, driverId={}", bookingId, driverId);
 		return ResponseEntity.ok().build();
 	}
 }
-

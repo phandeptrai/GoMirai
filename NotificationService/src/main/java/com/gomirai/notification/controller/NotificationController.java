@@ -11,6 +11,11 @@ import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Controller quản lý thông báo (Notification).
+ * 
+ * Chức năng: Tạo notification, lấy danh sách, đánh dấu đã đọc.
+ */
 @RestController
 @RequestMapping("/api/notifications")
 public class NotificationController {
@@ -27,12 +32,11 @@ public class NotificationController {
         String title = (String) n.getPayload().getOrDefault("title", "");
         String message = (String) n.getPayload().getOrDefault("message", "");
         return new NotificationResponse(
-            n.getId(),
-            title,
-            message,
-            n.isRead(),
-            LocalDateTime.ofInstant(n.getCreatedAt(), ZoneId.systemDefault())
-        );
+                n.getId(),
+                title,
+                message,
+                n.isRead(),
+                LocalDateTime.ofInstant(n.getCreatedAt(), ZoneId.systemDefault()));
     }
 
     @GetMapping("/user/{userId}")

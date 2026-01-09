@@ -22,14 +22,16 @@ import com.gomirai.auth.dto.TokenValidationResponse;
 import com.gomirai.auth.service.AuthApplicationService;
 
 /**
- * Authentication Controller handling:
- * 1. LOCAL auth: /register, /login with phone + password
- * 2. Google OAuth: /google with ID token
+ * Controller xử lý xác thực người dùng.
  * 
- * Note: Google OAuth only performs AUTHENTICATION (identity verification).
- * No distinction between "login" and "register" from user's perspective.
- * - If providerUserId exists → system treats it as login
- * - If not exists → system performs auto-registration
+ * Hỗ trợ 2 phương thức đăng nhập:
+ * 1. LOCAL: Đăng ký/đăng nhập bằng số điện thoại + mật khẩu
+ * 2. Google OAuth: Đăng nhập bằng tài khoản Google
+ * 
+ * Lưu ý về Google OAuth:
+ * - Chỉ thực hiện XÁC THỰC (authentication), không phân biệt đăng ký/đăng nhập
+ * - Nếu tài khoản Google đã tồn tại → đăng nhập
+ * - Nếu chưa tồn tại → tự động tạo tài khoản mới
  */
 @RestController
 @RequestMapping("/auth")
@@ -41,12 +43,24 @@ public class AuthController {
         this.authService = authService;
     }
 
+    /**
+     * Đăng ký tài khoản mới bằng số điện thoại và mật khẩu.
+     * 
+     * @param request Thông tin đăng ký (phoneNumber, password)
+     * @return AuthResponse chứa userId, role và JWT token
+     */
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
         AuthResponse resp = authService.register(request);
         return ResponseEntity.status(HttpStatus.CREATED).body(resp);
     }
 
+    /**
+     * Đăng nhập bằng số điện thoại và mật khẩu.
+     * 
+     * @param request Thông tin đăng nhập (phoneNumber, password)
+     * @return AuthResponse chứa userId, role và JWT token
+     */
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         AuthResponse resp = authService.login(request);
@@ -54,17 +68,17 @@ public class AuthController {
     }
 
     /**
-     * Google OAuth Authentication endpoint.
+     * Đăng nhập/đăng ký bằng Google OAuth.
      * 
-     * Accepts a Google ID token from the client (obtained via Google Sign-In SDK),
-     * verifies it with Google, and returns a system JWT token.
+     * Luồng xử lý:
+     * 1. Client gửi Google ID Token (lấy từ Google Sign-In SDK)
+     * 2. Server xác thực token với Google
+     * 3. Nếu user đã tồn tại → đăng nhập
+     * 4. Nếu user chưa tồn tại → tự động tạo tài khoản
+     * 5. Trả về JWT token của hệ thống
      * 
-     * This endpoint handles both:
-     * - Login: if user with this Google account already exists
-     * - Auto-registration: if this is a new Google account
-     * 
-     * @param request GoogleAuthRequest containing the Google ID token
-     * @return AuthResponse with system JWT token, userId, and role
+     * @param request Chứa Google ID Token
+     * @return AuthResponse chứa userId, role và JWT token
      */
     @PostMapping("/google")
     public ResponseEntity<AuthResponse> authenticateWithGoogle(@Valid @RequestBody GoogleAuthRequest request) {
@@ -72,11 +86,22 @@ public class AuthController {
         return ResponseEntity.ok(resp);
     }
 
+    /**
+     * Xác thực JWT token.
+     * Dùng bởi API Gateway để validate token trước khi forward request.
+     * 
+     * @param authorization Header Authorization chứa Bearer token
+     * @return TokenValidationResponse cho biết token hợp lệ hay không
+     */
     @PostMapping("/validate")
     public ResponseEntity<TokenValidationResponse> validate(
             @RequestHeader(name = "Authorization", required = false) String authorization) {
-        String token = (authorization != null && authorization.startsWith("Bearer ")) ? authorization.substring(7)
+        // Trích xuất token từ header "Bearer <token>"
+        String token = (authorization != null && authorization.startsWith("Bearer "))
+                ? authorization.substring(7)
                 : null;
+
+        // Nếu không có token → trả về invalid
         TokenValidationResponse result = (token == null)
                 ? new TokenValidationResponse(false, null, null)
                 : authService.validate(token);
@@ -84,8 +109,10 @@ public class AuthController {
     }
 
     /**
-     * Update user role to DRIVER
-     * Called by UserService when driver application is approved
+     * Cập nhật role của user thành DRIVER.
+     * Được gọi bởi UserService khi đơn đăng ký tài xế được duyệt.
+     * 
+     * @param userId ID của user cần cập nhật role
      */
     @PutMapping("/users/{userId}/role/driver")
     public ResponseEntity<Void> updateUserRoleToDriver(@PathVariable UUID userId) {
@@ -94,12 +121,17 @@ public class AuthController {
     }
 
     /**
-     * Refresh token to get current role
-     * Used when user role has been updated and needs new token
+     * Làm mới token để lấy role hiện tại từ database.
+     * Dùng khi role của user đã được cập nhật (VD: CUSTOMER → DRIVER)
+     * và cần token mới phản ánh role mới.
+     * 
+     * @param authorization Header Authorization chứa Bearer token cũ
+     * @return AuthResponse chứa token mới với role cập nhật
      */
     @PostMapping("/refresh")
     public ResponseEntity<AuthResponse> refreshToken(
             @RequestHeader(name = "Authorization", required = true) String authorization) {
+        // Trích xuất token (bỏ prefix "Bearer " nếu có)
         String token = authorization.startsWith("Bearer ") ? authorization.substring(7) : authorization;
         AuthResponse newAuth = authService.refreshToken(token);
         return ResponseEntity.ok(newAuth);

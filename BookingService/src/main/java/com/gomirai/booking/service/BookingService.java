@@ -49,6 +49,27 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Service xử lý logic đặt xe.
+ * 
+ * Các chức năng chính:
+ * 1. Tạo booking mới (createBooking) - Saga Pattern
+ * 2. Tài xế nhận cuốc (acceptBooking) - Atomic update tránh race condition
+ * 3. Cập nhật trạng thái: MATCHED → DRIVER_ARRIVED → IN_PROGRESS → COMPLETED
+ * 4. Hủy booking và hoàn tiền tự động
+ * 
+ * Luồng tạo booking (Saga Pattern):
+ * 1. Validate input
+ * 2. Gọi MapService để tính route
+ * 3. Gọi PricingService để tính giá
+ * 4. Trừ tiền Wallet nếu thanh toán ví (PaymentService)
+ * 5. Lưu booking vào DB
+ * 6. Publish event tìm tài xế (TrackingService)
+ * 
+ * First-accept-wins:
+ * - Sử dụng MongoDB atomic update để chỉ 1 tài xế nhận được cuốc
+ * - Tránh race condition khi nhiều tài xế accept cùng lúc
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j

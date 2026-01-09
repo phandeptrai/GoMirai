@@ -11,6 +11,28 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+/**
+ * Service quản lý ví điện tử và giao dịch.
+ * 
+ * Các chức năng chính:
+ * 1. getWallet: Lấy thông tin ví của user
+ * 2. topUp: Nạp tiền vào ví (phương thức trực tiếp, không qua VNPay)
+ * 3. payRide: Trừ tiền khi thanh toán chuyến đi
+ * 4. refundRide: Hoàn tiền khi hủy chuyến đi
+ * 
+ * Loại giao dịch (Transaction Type):
+ * - TOP_UP: Nạp tiền vào ví
+ * - RIDE_PAYMENT: Thanh toán chuyến đi
+ * - REFUND: Hoàn tiền khi hủy chuyến
+ * 
+ * Hướng giao dịch (Direction):
+ * - IN: Tiền vào (TOP_UP, REFUND)
+ * - OUT: Tiền ra (RIDE_PAYMENT)
+ * 
+ * Lưu ý:
+ * - Nạp tiền qua VNPay được xử lý bởi VNPayService
+ * - Ví được tạo tự động khi user đăng ký (qua Kafka event)
+ */
 @Service
 public class WalletServiceImpl implements WalletService {
     private final WalletRepository walletRepository;
@@ -95,6 +117,46 @@ public class WalletServiceImpl implements WalletService {
                 refundTx.getDirection(),
                 refundTx.getAmount(),
                 refundTx.getStatus(),
+                wallet.getBalance());
+    }
+
+    @Override
+    @Transactional
+    public TransactionResponse depositEarnings(UUID driverId, UUID bookingId, BigDecimal amount) {
+        // 1. Tìm ví của tài xế
+        Wallet wallet = walletRepository.findByUserId(driverId)
+                .orElseGet(() -> {
+                    // Nếu chưa có ví thì tạo mới (phòng trường hợp lỗi event tạo ví ban đầu)
+                    Wallet newWallet = new Wallet();
+                    newWallet.setWalletId(UUID.randomUUID());
+                    newWallet.setUserId(driverId);
+                    newWallet.setBalance(BigDecimal.ZERO);
+                    newWallet.setCurrency("VND");
+                    newWallet.setLastUpdated(LocalDateTime.now());
+                    return walletRepository.save(newWallet);
+                });
+
+        // 2. Kiểm tra Idempotency (booking này đã được cộng tiền chưa?)
+        // Tìm transaction loại EARNING với bookingId này
+        boolean alreadyProcessed = transactionRepository.findByBookingIdAndType(bookingId, "EARNING").isPresent();
+        if (alreadyProcessed) {
+            throw new BusinessException("EARNING_ALREADY_PROCESSED");
+        }
+
+        // 3. Cộng tiền
+        wallet.setBalance(wallet.getBalance().add(amount));
+        wallet.setLastUpdated(LocalDateTime.now());
+        walletRepository.save(wallet);
+
+        // 4. Tạo transaction record
+        Transaction tx = createTx(wallet.getWalletId(), bookingId, amount, "IN", "EARNING");
+
+        return new TransactionResponse(
+                tx.getTransactionId(),
+                tx.getType(),
+                tx.getDirection(),
+                tx.getAmount(),
+                tx.getStatus(),
                 wallet.getBalance());
     }
 

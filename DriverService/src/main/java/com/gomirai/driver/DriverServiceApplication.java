@@ -7,13 +7,16 @@ import org.springframework.context.annotation.ComponentScan;
 import org.springframework.kafka.annotation.EnableKafka;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
+import org.springframework.cloud.openfeign.EnableFeignClients;
+
 @SpringBootApplication
 @EnableDiscoveryClient
 @EnableKafka
 @EnableScheduling
+@EnableFeignClients
 @ComponentScan(basePackages = {
-	"com.gomirai.driver",
-	"com.gomirai.common"
+		"com.gomirai.driver",
+		"com.gomirai.common"
 })
 public class DriverServiceApplication {
 

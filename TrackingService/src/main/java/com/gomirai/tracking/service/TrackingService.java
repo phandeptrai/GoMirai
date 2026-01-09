@@ -21,6 +21,25 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Service theo dõi vị trí tài xế theo thời gian thực.
+ * 
+ * Sử dụng Redis Geo để lưu trữ và tìm kiếm tài xế gần đây:
+ * - GEO_KEY ("drivers:geo"): Lưu tọa độ GPS của tài xế
+ * - STATE_KEY ("drivers:state:{driverId}"): Lưu metadata (status, vehicleType)
+ * với TTL 5 phút
+ * 
+ * Các chức năng chính:
+ * 1. updateLocation: Cập nhật vị trí GPS và metadata của tài xế
+ * 2. findNearbyDrivers: Tìm tài xế gần điểm đón trong bán kính cho trước
+ * 3. getDriverLocation: Lấy vị trí hiện tại của một tài xế
+ * 4. cleanupExpiredGeoPoints: Dọn dẹp Geo Points đã hết hạn
+ * 
+ * Lưu ý về TTL:
+ * - Redis Geo Set không hỗ trợ TTL trực tiếp
+ * - Metadata có TTL 5 phút, Geo Point được giữ cho đến khi metadata hết hạn
+ * - Scheduled task chạy mỗi 2 phút để dọn dẹp Geo Points có metadata hết hạn
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -35,13 +54,14 @@ public class TrackingService {
 
     /**
      * Cập nhật vị trí và metadata của tài xế trong Redis.
-     * Nếu Redis gặp sự cố sẽ ném BusinessException để trả lỗi 400 rõ ràng thay vì 500 chung chung.
+     * Nếu Redis gặp sự cố sẽ ném BusinessException để trả lỗi 400 rõ ràng thay vì
+     * 500 chung chung.
      */
     public void updateLocation(DriverGeoState state) {
         try {
             // 1. Save Geo Point
             redisTemplate.opsForGeo()
-                .add(GEO_KEY, new Point(state.getLongitude(), state.getLatitude()), state.getDriverId());
+                    .add(GEO_KEY, new Point(state.getLongitude(), state.getLatitude()), state.getDriverId());
 
             // 2. Save Metadata (Status, VehicleType, lastUpdatedAt, ...)
             saveMetadata(state);
@@ -76,10 +96,11 @@ public class TrackingService {
         String stateJson = objectMapper.writeValueAsString(state);
         String key = STATE_KEY_PREFIX + state.getDriverId();
         redisTemplate.opsForValue().set(key, stateJson, STATE_TTL_SECONDS, TimeUnit.SECONDS);
-        
+
         // Note: Redis Geo Set doesn't support TTL directly.
         // Geo Point will remain until manually removed or when metadata expires.
-        // In findNearbyDrivers(), we filter out drivers whose metadata has expired (stateJson == null).
+        // In findNearbyDrivers(), we filter out drivers whose metadata has expired
+        // (stateJson == null).
     }
 
     public List<DriverLocationResponse> findNearbyDrivers(NearbyDriverRequest request) {
@@ -93,18 +114,17 @@ public class TrackingService {
             for (int i = 0; i < maxAttempts; i++) {
                 // 1. Search in Redis Geo
                 Circle circle = new Circle(
-                    new Point(request.getLongitude(), request.getLatitude()),
-                    new Distance(currentRadius, RedisGeoCommands.DistanceUnit.METERS)
-                );
+                        new Point(request.getLongitude(), request.getLatitude()),
+                        new Distance(currentRadius, RedisGeoCommands.DistanceUnit.METERS));
                 RedisGeoCommands.GeoRadiusCommandArgs args = RedisGeoCommands.GeoRadiusCommandArgs
-                    .newGeoRadiusArgs()
-                    .includeDistance()
-                    .includeCoordinates()
-                    .sortAscending()
-                    .limit(request.getLimit() * 2);
+                        .newGeoRadiusArgs()
+                        .includeDistance()
+                        .includeCoordinates()
+                        .sortAscending()
+                        .limit(request.getLimit() * 2);
 
-                GeoResults<RedisGeoCommands.GeoLocation<String>> results =
-                    redisTemplate.opsForGeo().radius(GEO_KEY, circle, args);
+                GeoResults<RedisGeoCommands.GeoLocation<String>> results = redisTemplate.opsForGeo().radius(GEO_KEY,
+                        circle, args);
 
                 if (results != null) {
                     for (GeoResult<RedisGeoCommands.GeoLocation<String>> result : results) {
@@ -118,8 +138,10 @@ public class TrackingService {
                                 DriverGeoState state = objectMapper.readValue(stateJson, DriverGeoState.class);
 
                                 // Filter Logic
-                                boolean statusMatch = request.getStatus() == null || request.getStatus() == state.getStatus();
-                                boolean typeMatch = request.getVehicleType() == null || request.getVehicleType() == state.getVehicleType();
+                                boolean statusMatch = request.getStatus() == null
+                                        || request.getStatus() == state.getStatus();
+                                boolean typeMatch = request.getVehicleType() == null
+                                        || request.getVehicleType() == state.getVehicleType();
 
                                 if (statusMatch && typeMatch) {
                                     drivers.add(DriverLocationResponse.builder()
@@ -156,7 +178,8 @@ public class TrackingService {
 
                 // No drivers found, expand radius
                 currentRadius *= expansionFactor;
-                log.info("No drivers found within {}m, expanding radius to {}m", currentRadius / expansionFactor, currentRadius);
+                log.info("No drivers found within {}m, expanding radius to {}m", currentRadius / expansionFactor,
+                        currentRadius);
             }
 
             // Clean up expired Geo Points before returning
@@ -174,7 +197,7 @@ public class TrackingService {
     public DriverGeoState getDriverLocation(String driverId) {
         String key = STATE_KEY_PREFIX + driverId;
         String stateJson = redisTemplate.opsForValue().get(key);
-        
+
         if (stateJson == null) {
             // Metadata expired - also remove Geo Point to prevent memory leak
             redisTemplate.opsForGeo().remove(GEO_KEY, driverId);
@@ -220,7 +243,8 @@ public class TrackingService {
      */
     public void cleanupExpiredGeoPointsScheduled() {
         try {
-            // Redis Geo Set is implemented as Sorted Set, so we use ZRANGE to get all members
+            // Redis Geo Set is implemented as Sorted Set, so we use ZRANGE to get all
+            // members
             // Get all members from the sorted set (0 to -1 means all members)
             var members = redisTemplate.opsForZSet().range(GEO_KEY, 0, -1);
             if (members == null || members.isEmpty()) {
@@ -230,7 +254,7 @@ public class TrackingService {
             int cleanedCount = 0;
             for (String driverId : members) {
                 String stateKey = STATE_KEY_PREFIX + driverId;
-                
+
                 // Check if metadata exists (if not, it means TTL expired)
                 String stateJson = redisTemplate.opsForValue().get(stateKey);
                 if (stateJson == null) {

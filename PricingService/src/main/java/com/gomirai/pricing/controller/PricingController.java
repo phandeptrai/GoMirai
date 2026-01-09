@@ -14,6 +14,11 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+/**
+ * Controller tính toán giá cước cho chuyến đi.
+ * 
+ * Chức năng: Ước tính giá dựa trên loại xe, khoảng cách, thời gian, khu vực.
+ */
 @RestController
 @RequestMapping("/api/pricing")
 public class PricingController {
@@ -34,18 +39,18 @@ public class PricingController {
     public Map<String, Object> debugAuth() {
         Map<String, Object> debug = new HashMap<>();
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        
+
         if (auth != null) {
             debug.put("authenticated", auth.isAuthenticated());
             debug.put("principal", auth.getPrincipal());
             debug.put("authorities", auth.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .collect(Collectors.toList()));
+                    .map(GrantedAuthority::getAuthority)
+                    .collect(Collectors.toList()));
         } else {
             debug.put("authenticated", false);
             debug.put("message", "No authentication found");
         }
-        
+
         return debug;
     }
 }

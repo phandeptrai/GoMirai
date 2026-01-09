@@ -12,7 +12,6 @@ WORKDIR /workspace/TrackingService
 COPY TrackingService/pom.xml .
 COPY TrackingService/mvnw .
 COPY TrackingService/.mvn ./.mvn
-RUN ./mvnw dependency:go-offline -B
 
 # 3. Copy Source & Package
 COPY TrackingService/src ./src
