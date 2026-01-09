@@ -5,6 +5,8 @@ import com.gomirai.payment.dto.request.*;
 import com.gomirai.payment.dto.response.*;
 import com.gomirai.payment.model.*;
 import com.gomirai.payment.repository.*;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
@@ -34,14 +36,11 @@ import java.util.UUID;
  * - Ví được tạo tự động khi user đăng ký (qua Kafka event)
  */
 @Service
+@RequiredArgsConstructor
+@Slf4j
 public class WalletServiceImpl implements WalletService {
     private final WalletRepository walletRepository;
     private final TransactionRepository transactionRepository;
-
-    public WalletServiceImpl(WalletRepository walletRepository, TransactionRepository transactionRepository) {
-        this.walletRepository = walletRepository;
-        this.transactionRepository = transactionRepository;
-    }
 
     @Override
     public WalletResponse getWallet(UUID userId) {
@@ -79,6 +78,19 @@ public class WalletServiceImpl implements WalletService {
     @Override
     @Transactional
     public TransactionResponse payRide(RidePaymentRequest request) {
+        // 1. Check Idempotency: Has this booking already been paid?
+        var existingTx = transactionRepository.findByBookingIdAndType(request.bookingId(), "RIDE_PAYMENT");
+        if (existingTx.isPresent()) {
+            log.info("Ride payment already processed for bookingId: {}. Returning existing transaction.",
+                    request.bookingId());
+            Transaction tx = existingTx.get();
+            Wallet wallet = walletRepository.findById(tx.getWalletId())
+                    .orElseThrow(() -> new BusinessException("WALLET_NOT_FOUND"));
+            return new TransactionResponse(tx.getTransactionId(), tx.getType(), tx.getDirection(), tx.getAmount(),
+                    tx.getStatus(), wallet.getBalance());
+        }
+
+        // 2. Process payment
         Wallet wallet = walletRepository.findByUserId(request.userId())
                 .orElseThrow(() -> new BusinessException("WALLET_NOT_FOUND"));
         if (wallet.getBalance().compareTo(request.amount()) < 0) {

@@ -1,24 +1,25 @@
-# Stage 1: Build Common Lib & Payment Service
+# Stage 1:# Stage 1: Build
 FROM eclipse-temurin:21-jdk-alpine AS build
-WORKDIR /workspace
+WORKDIR /scan
 
-# 1. Copy và cài đặt gomirai-common-lib 
-COPY gomirai-common-lib ./gomirai-common-lib
-WORKDIR /workspace/gomirai-common-lib
-RUN apk add --no-cache maven && mvn clean install -DskipTests
+# Copy common lib
+COPY gomirai-common-lib /scan/gomirai-common-lib
+COPY PaymentService /scan/PaymentService
 
-# 2. Build PaymentService
-WORKDIR /workspace/PaymentService
-COPY PaymentService/pom.xml .
-COPY PaymentService/mvnw .
-COPY PaymentService/.mvn ./.mvn
+# Build Common Lib
+WORKDIR /scan/gomirai-common-lib
+RUN ../PaymentService/mvnw clean install -DskipTests
 
-COPY PaymentService/src ./src
+# Build Service
+WORKDIR /scan/PaymentService
 RUN ./mvnw clean package -DskipTests
 
 # Stage 2: Runtime
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
-COPY --from=build /workspace/PaymentService/target/*.jar app.jar
+RUN addgroup -S spring && adduser -S spring -G spring
+USER spring:spring
+
+COPY --from=build /scan/PaymentService/target/*.jar app.jar
 EXPOSE 8083
 ENTRYPOINT ["java", "-jar", "app.jar"]

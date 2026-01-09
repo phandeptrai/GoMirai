@@ -6,6 +6,9 @@ import com.gomirai.booking.service.BookingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.annotation.RetryableTopic;
+import org.springframework.kafka.retrytopic.DltStrategy;
+import org.springframework.retry.annotation.Backoff;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.kafka.support.KafkaHeaders;
 import org.springframework.messaging.handler.annotation.Header;
@@ -28,6 +31,7 @@ public class DriverEventsConsumer {
 
     private final BookingService bookingService;
 
+    @RetryableTopic(attempts = "3", backoff = @Backoff(delay = 2000, multiplier = 2.0), dltStrategy = DltStrategy.NO_DLT)
     @KafkaListener(topics = "${kafka.topic.driver-accepted:driver.accepted}", groupId = "${spring.kafka.consumer.group-id}", containerFactory = "kafkaListenerContainerFactory")
     public void handleDriverAccepted(
             @Payload DriverAcceptedEvent event,
@@ -43,10 +47,11 @@ public class DriverEventsConsumer {
         } catch (Exception e) {
             log.error("Error processing DriverAcceptedEvent for bookingId={}",
                     event.getBookingId(), e);
-            // Could implement retry logic here
+            throw e; // Throw to trigger retry
         }
     }
 
+    @RetryableTopic(attempts = "3", backoff = @Backoff(delay = 2000, multiplier = 2.0), dltStrategy = DltStrategy.NO_DLT)
     @KafkaListener(topics = "${kafka.topic.driver-declined:driver.declined}", groupId = "${spring.kafka.consumer.group-id}", containerFactory = "kafkaListenerContainerFactory")
     public void handleDriverDeclined(
             @Payload DriverDeclinedEvent event,
@@ -62,6 +67,7 @@ public class DriverEventsConsumer {
         } catch (Exception e) {
             log.error("Error processing DriverDeclinedEvent for bookingId={}",
                     event.getBookingId(), e);
+            throw e; // Throw to trigger retry
         }
     }
 }

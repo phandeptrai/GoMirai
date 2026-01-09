@@ -1,7 +1,6 @@
 package com.gomirai.payment.service;
 
 import com.gomirai.common.dto.event.RefundRequestedEvent;
-import com.gomirai.common.exception.BusinessException;
 import com.gomirai.payment.model.Transaction;
 import com.gomirai.payment.model.Wallet;
 import com.gomirai.payment.repository.TransactionRepository;
@@ -9,6 +8,9 @@ import com.gomirai.payment.repository.WalletRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.annotation.RetryableTopic;
+import org.springframework.kafka.retrytopic.DltStrategy;
+import org.springframework.retry.annotation.Backoff;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,6 +39,7 @@ public class RefundKafkaConsumer {
     private final WalletRepository walletRepository;
     private final TransactionRepository transactionRepository;
 
+    @RetryableTopic(attempts = "3", backoff = @Backoff(delay = 2000, multiplier = 2.0), dltStrategy = DltStrategy.NO_DLT)
     @KafkaListener(topics = "${kafka.topic.refund-requested:refund.requested}", groupId = "payment-service-group")
     @Transactional
     public void handleRefundRequested(RefundRequestedEvent event) {

@@ -1,26 +1,26 @@
-# Multi-stage build with common-lib support
+# Stage 1: Build
 FROM eclipse-temurin:21-jdk-alpine AS build
-WORKDIR /workspace
+WORKDIR /scan
 
-# Copy common lib first and build it
-COPY gomirai-common-lib ./gomirai-common-lib
-WORKDIR /workspace/gomirai-common-lib
-RUN apk add --no-cache maven && mvn clean install -DskipTests
+# Copy common lib
+COPY gomirai-common-lib /scan/gomirai-common-lib
+COPY BookingService /scan/BookingService
 
-# Now build BookingService
-WORKDIR /workspace/BookingService
-COPY BookingService/pom.xml .
-COPY BookingService/mvnw .
-COPY BookingService/.mvn ./.mvn
+# Build Common Lib
+WORKDIR /scan/gomirai-common-lib
+RUN ../BookingService/mvnw clean install -DskipTests
 
-# Copy source and build
-COPY BookingService/src ./src
+# Build Service
+WORKDIR /scan/BookingService
 RUN ./mvnw clean package -DskipTests
 
-# Runtime stage
+# Stage 2: Runtime
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
-COPY --from=build /workspace/BookingService/target/*.jar app.jar
+RUN addgroup -S spring && adduser -S spring -G spring
+USER spring:spring
+
+COPY --from=build /scan/BookingService/target/*.jar app.jar
 EXPOSE 8088
 ENTRYPOINT ["java", "-jar", "app.jar"]
 

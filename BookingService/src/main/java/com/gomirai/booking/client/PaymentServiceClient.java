@@ -1,30 +1,28 @@
 package com.gomirai.booking.client;
 
 import com.gomirai.booking.dto.external.RidePaymentRequest;
-import com.gomirai.booking.dto.external.RefundRequest;
 import com.gomirai.booking.dto.external.TransactionResponse;
+import com.gomirai.booking.dto.external.RefundRequest;
 import com.gomirai.common.exception.BusinessException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.client.ServiceInstance;
 import org.springframework.cloud.client.discovery.DiscoveryClient;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
+import io.micrometer.observation.annotation.Observed;
 
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
 import java.util.List;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 /**
  * Client for calling PaymentService via Consul service discovery
@@ -52,6 +50,8 @@ public class PaymentServiceClient {
      * - PAYMENT_UNAVAILABLE: Service is down or unreachable
      * - PAYMENT_FAILED: Other payment errors
      */
+    @Observed(name = "payment.service.payRide")
+    @CircuitBreaker(name = "paymentService", fallbackMethod = "payRideFallback")
     public TransactionResponse payRide(RidePaymentRequest request) {
         ServiceInstance instance = getServiceInstance();
         if (instance == null) {
@@ -119,9 +119,24 @@ public class PaymentServiceClient {
     }
 
     /**
+     * Fallback for payRide
+     */
+    public TransactionResponse payRideFallback(RidePaymentRequest request, Exception e) {
+        log.error("Fallback triggered for PaymentService.payRide. Error: {}", e.getMessage());
+        if (e instanceof BusinessException
+                && (e.getMessage().contains("INSUFFICIENT_BALANCE") || e.getMessage().contains("WALLET_NOT_FOUND"))) {
+            throw (BusinessException) e;
+        }
+        throw new BusinessException(
+                "PAYMENT_SERVICE_DOWN: Hệ thống thanh toán đang bảo trì. Vui lòng thanh toán tiền mặt hoặc thử lại sau.");
+    }
+
+    /**
      * Call PaymentService to refund a ride payment
      * Used when customer cancels a booking that was paid with wallet
      */
+    @Observed(name = "payment.service.refund")
+    @CircuitBreaker(name = "paymentService") // Refund can also have CB
     public TransactionResponse refund(RefundRequest request) {
         ServiceInstance instance = getServiceInstance();
         if (instance == null) {
