@@ -8,6 +8,7 @@
 
 1. [Tổng quan](#-tổng-quan)
 2. [Kiến trúc hệ thống](#-kiến-trúc-hệ-thống)
+3. [Quickstart](#-quickstart)
 3. [Cấu trúc thư mục](#-cấu-trúc-thư-mục)
 4. [Công nghệ sử dụng](#-công-nghệ-sử-dụng)
 5. [Cài đặt và Cấu hình](#-cài-đặt-và-cấu-hình)
@@ -86,6 +87,53 @@ GoMirai là một hệ thống microservices hiện đại được xây dựng 
 2. **Asynchronous**: Service A → Kafka Event → Service B
 
 ---
+
+## ⚡ QUICKSTART
+
+1. Cập nhật Mongo URIs cho từng service trong `docker-compose.yml` (đã để sẵn chỗ):
+
+```
+auth-service.environment.SPRING_DATA_MONGODB_URI
+user-service.environment.SPRING_DATA_MONGODB_URI
+```
+
+2. Seed Consul KV cho API Gateway routes (nếu chưa có):
+
+```
+cat > /tmp/apigw-gateway-routes.yml <<'YAML'
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: auth-service
+          uri: lb://authservice
+          predicates:
+            - Path=/api/auth/**
+        - id: user-service
+          uri: lb://userservice
+          predicates:
+            - Path=/api/users/**
+YAML
+
+curl --request PUT \
+  --data-binary @/tmp/apigw-gateway-routes.yml \
+  http://localhost:8500/v1/kv/config/ApiGateway/application.yml
+```
+
+3. Khởi chạy:
+
+```
+docker compose up -d --build
+```
+
+4. Kiểm tra:
+
+```
+http://localhost:8080/actuator/health
+http://localhost:8500
+```
+
+Chi tiết xem `SETUP.md`.
 
 ## 📁 CẤU TRÚC THƯ MỤC
 

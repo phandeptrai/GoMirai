@@ -1,0 +1,27 @@
+package com.gomirai.driver;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.client.discovery.EnableDiscoveryClient;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.kafka.annotation.EnableKafka;
+import org.springframework.scheduling.annotation.EnableScheduling;
+
+import org.springframework.cloud.openfeign.EnableFeignClients;
+
+@SpringBootApplication
+@EnableDiscoveryClient
+@EnableKafka
+@EnableScheduling
+@EnableFeignClients
+@ComponentScan(basePackages = {
+		"com.gomirai.driver",
+		"com.gomirai.common"
+})
+public class DriverServiceApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(DriverServiceApplication.class, args);
+	}
+
+}

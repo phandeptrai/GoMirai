@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Consul - Service Discovery
   consul:
@@ -9,6 +7,9 @@ services:
       - "8500:8500"
       - "8600:8600/udp"
     command: agent -server -ui -bootstrap-expect=1 -client=0.0.0.0
+    environment:
+      # Reduce noisy deprecation warnings in terminal; options: trace|debug|info|warn|error
+      CONSUL_LOG_LEVEL: warn
     networks:
       - gomirai-network
     healthcheck:
@@ -52,6 +53,7 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_CREATE_TOPICS: "notification.events:3:1"
     networks:
       - gomirai-network
     healthcheck:
@@ -60,20 +62,63 @@ services:
       timeout: 10s
       retries: 5
 
+  # Notification Service
+  notification-service:
+    build:
+      context: .
+      dockerfile: NotificationService/Dockerfile
+    container_name: notification-service
+    ports:
+      - "8090:8090"
+    depends_on:
+      consul:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_DATA_MONGODB_URI: ${NOTIFICATION_MONGODB_URI}
+      SPRING_DATA_MONGODB_DATABASE: gomirai_notification
+      SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SERVER_PORT: 8090
+      SPRING_KAFKA_CONSUMER_GROUP_ID: notification-service
+    networks:
+      - gomirai-network
+    restart: on-failure
+
+  # Nginx Reverse Proxy
+  # Using static config with Docker DNS resolver
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - api-gateway
+      - notification-service
+    networks:
+      - gomirai-network
+    restart: always
+
   # API Gateway
   api-gateway:
     build:
-      context: ./ApiGateway
-      dockerfile: Dockerfile
+      context: .  # Build from root to access common-lib
+      dockerfile: ApiGateway/Dockerfile
     container_name: api-gateway
     ports:
-      - "${API_GATEWAY_PORT:-8080}:8080"
+      - "8080:8080"
     depends_on:
       consul:
         condition: service_healthy
     environment:
-      SPRING_CLOUD_CONSUL_HOST: ${CONSUL_HOST}
-      SPRING_CLOUD_CONSUL_PORT: ${CONSUL_PORT}
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SECURITY_JWT_SECRET: ${JWT_SECRET}
     networks:
       - gomirai-network
     restart: on-failure
@@ -81,21 +126,28 @@ services:
   # Auth Service
   auth-service:
     build:
-      context: ./AuthService
-      dockerfile: Dockerfile
+      context: .  # Build from root to access common-lib
+      dockerfile: AuthService/Dockerfile
     container_name: auth-service
-    ports:
-      - "${AUTH_SERVICE_PORT:-8081}:8081"
+    # ✅ SECURITY: Không expose port ra ngoài, chỉ giao tiếp internal qua API Gateway
+    # ports:
+    #   - "8081:8081"
+    expose:
+      - "8081"  # Chỉ expose trong internal network
     depends_on:
       consul:
         condition: service_healthy
       kafka:
         condition: service_healthy
     environment:
-      SPRING_CLOUD_CONSUL_HOST: ${CONSUL_HOST}
-      SPRING_CLOUD_CONSUL_PORT: ${CONSUL_PORT}
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
-      SPRING_DATA_MONGODB_URI: ${MONGODB_AUTH_URI}
+      SPRING_DATA_MONGODB_URI: ${AUTH_MONGODB_URI}
+      SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      # Google OAuth
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
     networks:
       - gomirai-network
     restart: on-failure
@@ -103,24 +155,239 @@ services:
   # User Service
   user-service:
     build:
-      context: ./UserService
-      dockerfile: Dockerfile
+      context: .  # Build from root to access common-lib
+      dockerfile: UserService/Dockerfile
     container_name: user-service
-    ports:
-      - "${USER_SERVICE_PORT:-8082}:8082"
+    # ✅ SECURITY: Không expose port ra ngoài, chỉ giao tiếp internal qua API Gateway
+    # ports:
+    #   - "8082:8082"
+    expose:
+      - "8082"  # Chỉ expose trong internal network
     depends_on:
       consul:
         condition: service_healthy
       kafka:
         condition: service_healthy
     environment:
-      SPRING_CLOUD_CONSUL_HOST: ${CONSUL_HOST}
-      SPRING_CLOUD_CONSUL_PORT: ${CONSUL_PORT}
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
-      SPRING_DATA_MONGODB_URI: ${MONGODB_USER_URI}
+      SPRING_DATA_MONGODB_URI: ${USER_MONGODB_URI}
+      SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
     networks:
       - gomirai-network
     restart: on-failure
+
+  # Driver Service
+  driver-service:
+    build:
+      context: .  # Build from root to access common-lib
+      dockerfile: DriverService/Dockerfile
+    container_name: driver-service
+    expose:
+      - "8084"
+    depends_on:
+      consul:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_DATA_MONGODB_URI: ${DRIVER_MONGODB_URI}
+      SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    networks:
+      - gomirai-network
+    restart: on-failure
+
+  # Payment Service
+  payment-service:
+    build:
+      context: .  # Build from root to access common-lib
+      dockerfile: PaymentService/Dockerfile
+    container_name: payment-service
+    expose:
+      - "8083"  # Internal only
+    depends_on:
+      consul:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_DATA_MONGODB_URI: ${PAYMENT_MONGODB_URI}
+      SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      # VNPay Configuration
+      VNPAY_TMN_CODE: ${VNPAY_TMN_CODE}
+      VNPAY_HASH_SECRET: ${VNPAY_HASH_SECRET}
+      VNPAY_PAYMENT_URL: ${VNPAY_PAYMENT_URL:-https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
+      VNPAY_RETURN_URL: ${VNPAY_RETURN_URL:-http://localhost:3000/payment/vnpay/result}
+    networks:
+      - gomirai-network
+    restart: on-failure
+
+  # Tracking Service
+  tracking-service:
+    build:
+      context: .
+      dockerfile: TrackingService/Dockerfile
+    container_name: tracking-service
+    ports:
+      - "8085:8085"
+    depends_on:
+      consul:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      # ✅ Redis local is optional - can use cloud Redis via SPRING_REDIS_URL
+      # Uncomment below if using local Redis:
+      # redis:
+      #   condition: service_healthy
+    environment:
+      # ✅ Using Redis Cloud URL
+      SPRING_REDIS_URL: ${SPRING_REDIS_URL}
+      
+      # ✅ Option 2: Use local Redis (fallback if SPRING_REDIS_URL not set)
+      # SPRING_REDIS_HOST: ${SPRING_REDIS_HOST:redis}
+      # SPRING_REDIS_PORT: ${SPRING_REDIS_PORT:6379}
+      # SPRING_REDIS_PASSWORD: ${SPRING_REDIS_PASSWORD:}
+      # SPRING_REDIS_USERNAME: ${SPRING_REDIS_USERNAME:}
+      # SPRING_REDIS_SSL_ENABLED: ${SPRING_REDIS_SSL_ENABLED:false}
+      
+      SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    networks:
+      - gomirai-network
+    restart: on-failure
+
+  # Map Service
+  map-service:
+    build:
+      context: .  # Build from root to access common-lib
+      dockerfile: MapService/Dockerfile
+    container_name: map-service
+    # ✅ SECURITY: Không expose port ra ngoài, chỉ giao tiếp internal qua API Gateway
+    expose:
+      - "8086"  # Chỉ expose trong internal network
+    depends_on:
+      consul:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      # Mapbox API Token
+      MAPBOX_ACCESS_TOKEN: ${MAPBOX_ACCESS_TOKEN}
+      
+      # Security
+      SECURITY_JWT_SECRET: ${JWT_SECRET}
+      
+      # Infrastructure
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    networks:
+      - gomirai-network
+    restart: on-failure
+
+  # Redis - For Tracking Service (Local Development)
+  # ✅ DISABLED - Using Redis Cloud instead
+  # Uncomment below if you want to use local Redis container:
+  # redis:
+  #   image: redis:7.2-alpine
+  #   container_name: redis
+  #   ports:
+  #     - "6379:6379"
+  #   networks:
+  #     - gomirai-network
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "ping"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+  # Pricing Service
+  pricing-service:
+    build:
+      context: .
+      dockerfile: PricingService/Dockerfile
+    container_name: pricing-service
+    expose:
+      - "8087"
+    depends_on:
+      consul:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_DATA_MONGODB_URI: ${PRICING_MONGODB_URI}
+      SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SERVER_PORT: 8087
+      SPRING_PROFILES_ACTIVE: dev
+    networks:
+      - gomirai-network
+    restart: on-failure
+
+  # Booking Service
+  booking-service:
+    build:
+      context: .
+      dockerfile: BookingService/Dockerfile
+    container_name: booking-service
+    expose:
+      - "8088"
+    depends_on:
+      consul:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_DATA_MONGODB_URI: ${BOOKING_MONGODB_URI}
+      SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SERVER_PORT: 8088
+      SPRING_PROFILES_ACTIVE: dev
+    networks:
+      - gomirai-network
+    restart: on-failure
+    deploy:
+      replicas: 1
+
+  # Review Service
+  review-service:
+    build:
+      context: .
+      dockerfile: ReviewService/Dockerfile
+    container_name: review-service
+    expose:
+      - "8089"
+    depends_on:
+      consul:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_DATA_MONGODB_URI: ${REVIEW_MONGODB_URI}
+      SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SPRING_CLOUD_CONSUL_HOST: consul
+      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SERVER_PORT: 8089
+      SPRING_PROFILES_ACTIVE: dev
+    networks:
+      - gomirai-network
+    restart: on-failure
+
+
 
 networks:
   gomirai-network:

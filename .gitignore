@@ -1,5 +1,14 @@
 # Environment Variables (contains sensitive information)
 .env
+*.env
+.env.*
+**/.env
+**/*.env
+
+# Spring Boot per-service secret/property overrides (do not commit secrets)
+**/application-local.properties
+**/application-secrets.properties
+**/application-*.secrets.properties
 
 # IDE
 .idea/
@@ -17,3 +26,5 @@ build/
 
 # Docker volumes
 data/
+
+docs/

@@ -1,0 +1,1123 @@
+# 🚀 GoMirai Project Overview & Status
+
+**Project Name:** GoMirai  
+**Architecture:** Microservices  
+**Version:** 1.0.0  
+**Last Updated:** 2025-11-24  
+**Status:** ✅ Development - Core Services Completed
+
+---
+
+## 📋 Table of Contents
+
+1. [Project Summary](#1-project-summary)
+2. [System Architecture](#2-system-architecture)
+3. [Current Services](#3-current-services)
+4. [Common Library](#4-common-library)
+5. [Security Implementation](#5-security-implementation)
+6. [Technology Stack](#6-technology-stack)
+7. [Project Structure](#7-project-structure)
+8. [API Endpoints](#8-api-endpoints)
+9. [Database Schema](#9-database-schema)
+10. [Development Progress](#10-development-progress)
+11. [What's Next](#11-whats-next)
+12. [Documentation](#12-documentation)
+
+---
+
+## 1. Project Summary
+
+### 1.1. What is GoMirai?
+
+GoMirai là một hệ thống microservices hiện đại được xây dựng với Spring Boot, sử dụng event-driven architecture với Apache Kafka. Dự án được thiết kế với focus vào **security, scalability, maintainability** và **code reusability** thông qua **gomirai-common-lib**.
+
+### 1.2. Core Features
+
+- ✅ **Authentication & Authorization** - JWT-based auth với role-based access control
+- ✅ **User Management** - Quản lý thông tin người dùng và profiles
+- ✅ **API Gateway** - Single entry point với service discovery
+- ✅ **Event-Driven Communication** - Kafka-based messaging giữa các services
+- ✅ **Service Discovery** - Consul-based service registration và discovery
+- ✅ **Rate Limiting** - Bảo vệ authentication endpoints
+- ✅ **Input Validation** - Comprehensive validation với clear error messages
+- ✅ **CORS Support** - Cross-origin requests cho frontend integration
+- ✅ **Common Library** - Shared components để tránh code duplication
+
+### 1.3. Design Principles
+
+1. **Security First** - Mọi endpoint đều require authentication (trừ login/register)
+2. **Zero Trust** - Không có direct access vào backend services, chỉ qua Gateway
+3. **DRY (Don't Repeat Yourself)** - Sử dụng common library cho shared components
+4. **Fail Fast** - Validation errors trả về ngay với clear messages
+5. **Event-Driven** - Services communicate qua Kafka events
+6. **Stateless** - JWT-based authentication, no server-side sessions
+7. **Cloud-Ready** - Docker containerized, ready for orchestration
+
+---
+
+## 2. System Architecture
+
+### 2.1. High-Level Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         Frontend (Port 3000)                     │
+│                    (React/Angular/Vue/Mobile)                    │
+└────────────────────────────┬────────────────────────────────────┘
+                             │ HTTP + JWT
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    API Gateway (Port 8080)                       │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │  • JWT Validation (from common-lib)                       │  │
+│  │  • Service Discovery (Consul)                             │  │
+│  │  • Request Routing                                        │  │
+│  │  • Security Headers                                       │  │
+│  │  • CORS Configuration                                     │  │
+│  └──────────────────────────────────────────────────────────┘  │
+└────────────┬───────────────────────┬────────────────────────────┘
+             │                       │
+    ┌────────▼────────┐     ┌───────▼────────┐
+    │  AuthService    │     │  UserService   │
+    │   (Port 8081)   │     │   (Port 8082)  │
+    │   [Internal]    │     │   [Internal]   │
+    └────────┬────────┘     └───────┬────────┘
+             │                      │
+             │    Uses common-lib   │
+             │  ┌─────────────────┐ │
+             └─▶│ gomirai-common  │◀┘
+                │     -lib        │
+                │  • Security     │
+                │  • DTOs         │
+                │  • Events       │
+                │  • Utils        │
+                │  • Exceptions   │
+                └────────┬────────┘
+                         │
+                         ▼
+            ┌───────────────────────┐
+            │   Apache Kafka        │
+            │   (Port 9092)         │
+            │   Event Bus           │
+            └───────────────────────┘
+                        │
+        ┌───────────────┼───────────────┐
+        ▼               ▼               ▼
+   ┌─────────┐    ┌─────────┐    ┌─────────┐
+   │ MongoDB │    │ MongoDB │    │  Consul │
+   │  Auth   │    │  User   │    │  (8500) │
+   └─────────┘    └─────────┘    └─────────┘
+```
+
+### 2.2. Request Flow
+
+**Authentication Flow:**
+```
+1. Client → POST /api/auth/register → API Gateway → AuthService
+2. AuthService → Save user → MongoDB (auth_db)
+3. AuthService → Publish UserRegisteredEvent → Kafka (using common-lib event)
+4. UserService ← Subscribe UserRegisteredEvent ← Kafka
+5. UserService → Create UserProfile → MongoDB (user_db)
+6. Client ← JWT Token ← AuthService (generated by common-lib JwtService)
+```
+
+**Authenticated Request Flow:**
+```
+1. Client → GET /api/users/{userId} + JWT → API Gateway
+2. API Gateway → Validate JWT (using common-lib JwtService) → Extract userId & role
+3. API Gateway → Discover service → Consul
+4. API Gateway → Forward request → UserService
+5. UserService → Validate JWT again (using common-lib JwtAuthenticationFilter)
+6. UserService → Check authorization (using common-lib SecurityUtils)
+7. UserService → Fetch data → MongoDB
+8. Client ← JSON Response (using common-lib ApiResponse) ← UserService
+```
+
+### 2.3. Security Layers
+
+```
+Layer 1: API Gateway
+├─ JWT Validation (common-lib JwtService)
+├─ Service Whitelist (prevent service discovery bypass)
+├─ Security Headers (CSP, X-Frame-Options)
+└─ CORS Configuration
+
+Layer 2: Backend Services
+├─ JWT Re-validation (common-lib JwtAuthenticationFilter)
+├─ Authorization Checks (common-lib SecurityUtils)
+├─ Input Validation (common-lib ValidationUtil + @Valid)
+├─ Rate Limiting (AuthService only)
+└─ Error Handling (common-lib GlobalExceptionHandler)
+
+Layer 3: Data Layer
+├─ MongoDB Authentication
+├─ Database-level Access Control
+└─ Connection Pooling
+```
+
+---
+
+## 3. Current Services
+
+### 3.1. API Gateway
+
+**Status:** ✅ Production Ready  
+**Port:** 8080 (External)  
+**Purpose:** Single entry point cho tất cả frontend requests
+
+**Responsibilities:**
+- JWT token validation (using **gomirai-common-lib**)
+- Service discovery via Consul
+- Request routing to backend services
+- Security headers injection
+- CORS handling
+- Error standardization
+
+**Key Features:**
+- ✅ JWT authentication filter (from common-lib)
+- ✅ Service name whitelist (security)
+- ✅ Path prefix mapping
+- ✅ Security headers (CSP, X-Frame-Options, XSS)
+- ✅ CORS configuration
+- ✅ Actuator endpoints secured
+
+**Technologies:**
+- Spring Boot 3.5.7
+- Spring Cloud Gateway
+- Spring Security
+- Consul Discovery
+- **gomirai-common-lib 1.0.0**
+
+---
+
+### 3.2. AuthService
+
+**Status:** ✅ Production Ready  
+**Port:** 8081 (Internal Only)  
+**Database:** MongoDB (auth_db)  
+**Purpose:** User authentication & JWT token management
+
+**Responsibilities:**
+- User registration with password hashing (BCrypt)
+- User login with JWT token generation (using **gomirai-common-lib JwtService**)
+- JWT token validation
+- Password policy enforcement (using **gomirai-common-lib ValidationUtil**)
+- Rate limiting (5 requests/minute)
+- Publish UserRegisteredEvent to Kafka (using **gomirai-common-lib BaseEvent**)
+
+**Key Features:**
+- ✅ BCrypt password hashing (strength 10)
+- ✅ JWT token generation from common-lib
+- ✅ Role-based tokens (common-lib Role enum)
+- ✅ Rate limiting (Bucket4j)
+- ✅ Input validation (common-lib ValidationUtil)
+- ✅ Kafka producer (common-lib UserRegisteredEvent)
+- ✅ Security headers
+- ✅ CORS configuration
+- ✅ Global exception handling (common-lib GlobalExceptionHandler)
+
+**Endpoints:**
+```
+POST /auth/register - Register new user
+POST /auth/login    - Login & get JWT token
+POST /auth/validate - Validate JWT token (internal)
+GET  /actuator/health - Health check
+```
+
+**Dependencies:**
+- Spring Boot 3.5.7
+- Spring Security
+- MongoDB
+- Kafka Producer
+- Bucket4j (Rate Limiting)
+- **gomirai-common-lib 1.0.0**
+
+---
+
+### 3.3. UserService
+
+**Status:** ✅ Production Ready  
+**Port:** 8082 (Internal Only)  
+**Database:** MongoDB (user_db)  
+**Purpose:** User profile management
+
+**Responsibilities:**
+- Quản lý user profiles (CRUD)
+- Listen to UserRegisteredEvent từ AuthService (using **gomirai-common-lib event**)
+- Authorization validation (using **gomirai-common-lib SecurityUtils**)
+- Profile completion status tracking
+
+**Key Features:**
+- ✅ JWT authentication (common-lib JwtAuthenticationFilter)
+- ✅ Ownership validation (common-lib SecurityUtils)
+- ✅ Admin-only endpoints
+- ✅ Kafka consumer (common-lib UserRegisteredEvent)
+- ✅ Input validation (common-lib ValidationUtil)
+- ✅ Comprehensive error handling (common-lib GlobalExceptionHandler)
+- ✅ Security headers
+- ✅ CORS configuration
+
+**Endpoints:**
+```
+GET    /api/users/{userId}  - Get user profile (owner or admin)
+PUT    /api/users/{userId}  - Update user profile (owner only)
+DELETE /api/users/{userId}  - Delete user profile (owner only)
+GET    /api/users           - Get all profiles (admin only)
+GET    /actuator/health     - Health check
+```
+
+**Dependencies:**
+- Spring Boot 3.5.7
+- Spring Security
+- MongoDB
+- Kafka Consumer
+- Jakarta Validation
+- Lombok
+- **gomirai-common-lib 1.0.0**
+
+---
+
+### 3.4. DriverService
+
+**Status:** 🚧 In Progress (driver onboarding MVP)  
+**Port:** 8084 (Internal Only)  
+**Database:** MongoDB (driver_db)  
+**Purpose:** Quản lý hồ sơ tài xế, phương tiện và trạng thái hoạt động
+
+**Responsibilities:**
+- Lưu trữ hồ sơ tài xế (license, userId, rating, createdAt)
+- Quản lý thông tin xe (brand/model/plate/type)
+- Quản lý 2 loại trạng thái:
+  - **Account Status:** PENDING_VERIFICATION, ACTIVE, REJECTED, BANNED
+  - **Availability Status:** ONLINE, OFFLINE
+- Cho phép tài xế đăng ký / cập nhật hồ sơ & xe
+- Cho phép tài xế bật/tắt nhận chuyến
+- Cho phép Admin duyệt, từ chối, khóa, mở khóa hồ sơ
+
+**Key Features:**
+- ✅ JWT authentication & filters từ **gomirai-common-lib**
+- ✅ DTO chuẩn hóa với `ApiResponse`
+- ✅ Validation toàn diện (`@Valid`, ValidationUtil)
+- ✅ Business exceptions thống nhất (gomirai-common-lib)
+- ✅ Consul service discovery + Kafka bootstrap sẵn sàng cho events
+
+**Endpoints:**
+```
+POST   /api/drivers/apply                 - Đăng ký làm tài xế
+GET    /api/drivers/me                    - Xem thông tin hồ sơ của chính mình
+PUT    /api/drivers/me                    - Cập nhật thông tin license
+GET    /api/drivers/me/vehicle            - Xem thông tin xe
+PUT    /api/drivers/me/vehicle            - Cập nhật thông tin xe
+PATCH  /api/drivers/me/status/online      - Bật trạng thái nhận chuyến
+PATCH  /api/drivers/me/status/offline     - Tắt trạng thái nhận chuyến
+GET    /api/drivers/{driverId}/rating     - Xem rating của tài xế
+GET    /api/drivers?status=PENDING...     - List tài xế theo trạng thái (Admin)
+PATCH  /api/drivers/{id}/approve          - Duyệt hồ sơ (Admin)
+PATCH  /api/drivers/{id}/reject           - Từ chối hồ sơ (Admin)
+PATCH  /api/drivers/{id}/suspend          - Khóa tài khoản (Admin)
+PATCH  /api/drivers/{id}/unsuspend        - Mở khóa tài khoản (Admin)
+```
+
+**Dependencies:**
+- Spring Boot 3.5.7
+- Spring Security 6
+- MongoDB (driver_db collection `driver_profiles`)
+- Kafka (chuẩn bị cho events driver-online)
+- Jakarta Validation
+- Lombok
+- **gomirai-common-lib 1.0.1**
+
+---
+
+## 4. Common Library
+
+### 4.1. gomirai-common-lib
+
+**Status:** ✅ Production Ready  
+**Version:** 1.0.0  
+**Purpose:** Shared components cho tất cả microservices
+
+**Benefits:**
+- ✅ **No Code Duplication** - Single source of truth
+- ✅ **Consistent Security** - Same JWT implementation across all services
+- ✅ **Standardized Errors** - Consistent error responses
+- ✅ **Easy Maintenance** - Update once, affects all services
+- ✅ **Type Safety** - Shared enums and models
+
+### 4.2. Components Included
+
+#### Security (`com.gomirai.common.security`)
+- `JwtService` - JWT token generation and validation
+- `JwtAuthenticationFilter` - Spring Security filter for JWT
+- `JwtAuthenticationEntryPoint` - 401 error handler
+- `SecurityUtils` - Helper methods for authorization
+
+#### DTOs (`com.gomirai.common.dto`)
+- `response/ErrorResponse` - Standardized error response
+- `response/ValidationErrorResponse` - Validation error response
+- `response/ApiResponse<T>` - Generic API response wrapper
+- `event/UserRegisteredEvent` - Kafka event for user registration
+- `event/BaseEvent` - Base class for all events
+
+#### Enums (`com.gomirai.common.enums`)
+- `Role` - User roles (CUSTOMER, DRIVER, ADMIN)
+- `AuthProvider` - Auth providers (LOCAL, GOOGLE, FACEBOOK, APPLE)
+- `ServiceName` - Service names for discovery
+
+#### Exceptions (`com.gomirai.common.exception`)
+- `BusinessException` - Business logic errors
+- `UnauthorizedException` - 401 errors
+- `ForbiddenException` - 403 errors
+- `NotFoundException` - 404 errors
+- `GlobalExceptionHandler` - Centralized exception handling
+
+#### Utils (`com.gomirai.common.util`)
+- `DateTimeUtil` - Date/time formatting and conversion
+- `ValidationUtil` - Input validation (phone, email, password)
+- `StringUtil` - String manipulation
+
+#### Constants (`com.gomirai.common.constant`)
+- `ValidationConstants` - Validation rules and messages
+- `SystemConstants` - System-wide constants
+
+### 4.3. How Services Use Common Library
+
+**Step 1: Add Dependency**
+```xml
+<dependency>
+    <groupId>com.gomirai</groupId>
+    <artifactId>gomirai-common-lib</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
+
+**Step 2: Enable Component Scanning**
+```java
+@SpringBootApplication
+@EnableDiscoveryClient
+@ComponentScan(basePackages = {
+    "com.gomirai.auth",      // Service-specific
+    "com.gomirai.common"     // Common library
+})
+public class AuthServiceApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(AuthServiceApplication.class, args);
+    }
+}
+```
+
+**Step 3: Use Components**
+```java
+// Import from common lib
+import com.gomirai.common.security.JwtService;
+import com.gomirai.common.security.SecurityUtils;
+import com.gomirai.common.dto.response.ErrorResponse;
+import com.gomirai.common.enums.Role;
+import com.gomirai.common.exception.ForbiddenException;
+
+// Use directly - no need to reimplement!
+@Service
+public class YourService {
+    private final SecurityUtils securityUtils; // Autowired from common-lib
+    
+    public void someMethod() {
+        UUID currentUserId = securityUtils.getCurrentUserId();
+        securityUtils.validateOwnership(resourceId);
+    }
+}
+```
+
+---
+
+## 5. Security Implementation
+
+### 5.1. Authentication Flow
+
+**JWT Token Structure:**
+```json
+{
+  "sub": "550e8400-e29b-41d4-a716-446655440000",  // userId (UUID)
+  "role": "CUSTOMER",                              // User role (from common-lib enum)
+  "iat": 1700000000,                               // Issued at
+  "exp": 1700086400                                // Expires (24h)
+}
+```
+
+**JWT Secret:**
+- Stored in `.env` file
+- Format: `BASE64:encoded-secret-here`
+- Shared across ALL services
+- Minimum 256 bits for HS256
+- Processed by **common-lib JwtService**
+
+### 5.2. Authorization Strategy (Using common-lib SecurityUtils)
+
+**1. Ownership Validation:**
+```java
+// User can only access their own resources
+securityUtils.validateOwnership(userId);  // From common-lib
+```
+
+**2. Role-Based Access:**
+```java
+// Only ADMIN can access
+@PreAuthorize("hasRole('ADMIN')")  // Role from common-lib enum
+```
+
+**3. Ownership OR Admin:**
+```java
+// User can access own resource, or ADMIN can access all
+securityUtils.validateOwnershipOrAdmin(userId);  // From common-lib
+```
+
+### 5.3. Security Measures Implemented
+
+| Security Measure | API Gateway | AuthService | UserService |
+|------------------|-------------|-------------|-------------|
+| JWT Validation (common-lib) | ✅ | ✅ | ✅ |
+| Authorization Checks (common-lib) | ❌ (routing only) | ❌ (auth only) | ✅ |
+| Rate Limiting | ❌ | ✅ (5/min) | ❌ |
+| Input Validation (common-lib) | ❌ | ✅ | ✅ |
+| CORS | ✅ | ✅ | ✅ |
+| Security Headers | ✅ | ✅ | ✅ |
+| Actuator Security | ✅ (health only) | ✅ (health only) | ✅ (health only) |
+| Service Whitelist | ✅ | ❌ | ❌ |
+| Password Hashing | ❌ | ✅ (BCrypt) | ❌ |
+| Global Exception Handler (common-lib) | ✅ | ✅ | ✅ |
+
+---
+
+## 6. Technology Stack
+
+### 6.1. Backend Framework
+- **Java 21** - LTS version
+- **Spring Boot 3.5.7** - Latest stable
+- **Spring Cloud 2025.0.0** - Service discovery, config
+- **Spring Security 6+** - Authentication & authorization
+
+### 6.2. Common Library
+- **gomirai-common-lib 1.0.0** - Shared components
+  - Security (JWT, Filters, Utils)
+  - DTOs (Requests, Responses, Events)
+  - Exceptions & Handlers
+  - Validation Utils
+  - Constants & Enums
+
+### 6.3. Databases
+- **MongoDB 7.0** - NoSQL database
+  - `auth_db` - AuthService data
+  - `user_db` - UserService data
+
+### 6.4. Message Broker
+- **Apache Kafka 3.x** - Event streaming
+  - Topics: `user-registered-event`
+  - Events from common-lib
+
+### 6.5. Service Discovery
+- **Consul 1.15** - Service registry & health checks
+
+### 6.6. API Gateway
+- **Spring Cloud Gateway** - Reactive gateway
+
+### 6.7. Security
+- **JJWT 0.12.3** - JWT implementation (in common-lib)
+- **BCrypt** - Password hashing
+- **Bucket4j 8.1.0** - Rate limiting
+
+### 6.8. Validation
+- **Jakarta Validation** - Bean validation
+- **Hibernate Validator** - Validation implementation
+- **Common-lib ValidationUtil** - Custom validators
+
+### 6.9. Utilities
+- **Lombok** - Reduce boilerplate code
+- **SLF4J + Logback** - Logging
+
+### 6.10. Containerization
+- **Docker** - Container runtime
+- **Docker Compose** - Multi-container orchestration
+
+### 6.11. Build Tools
+- **Maven 3.9+** - Dependency management & build
+
+---
+
+## 7. Project Structure
+
+```
+GoMirai/
+├── gomirai-common-lib/              # ⭐ Shared Common Library
+│   ├── src/main/java/com/gomirai/common/
+│   │   ├── security/
+│   │   │   ├── JwtService.java
+│   │   │   ├── JwtAuthenticationFilter.java
+│   │   │   ├── JwtAuthenticationEntryPoint.java
+│   │   │   └── SecurityUtils.java
+│   │   ├── dto/
+│   │   │   ├── response/
+│   │   │   │   ├── ErrorResponse.java
+│   │   │   │   ├── ValidationErrorResponse.java
+│   │   │   │   └── ApiResponse.java
+│   │   │   └── event/
+│   │   │       ├── BaseEvent.java
+│   │   │       └── UserRegisteredEvent.java
+│   │   ├── enums/
+│   │   │   ├── Role.java
+│   │   │   ├── AuthProvider.java
+│   │   │   └── ServiceName.java
+│   │   ├── exception/
+│   │   │   ├── BusinessException.java
+│   │   │   ├── UnauthorizedException.java
+│   │   │   ├── ForbiddenException.java
+│   │   │   ├── NotFoundException.java
+│   │   │   └── GlobalExceptionHandler.java
+│   │   ├── util/
+│   │   │   ├── DateTimeUtil.java
+│   │   │   ├── ValidationUtil.java
+│   │   │   └── StringUtil.java
+│   │   └── constant/
+│   │       ├── ValidationConstants.java
+│   │       └── SystemConstants.java
+│   ├── README.md
+│   └── pom.xml
+│
+├── ApiGateway/                      # API Gateway Service
+│   ├── src/main/java/com/gomirai/gateway/
+│   │   ├── config/
+│   │   │   └── SecurityConfig.java           # Uses common-lib components
+│   │   ├── controller/
+│   │   │   └── ProxyController.java          # Service routing
+│   │   └── ApiGatewayApplication.java        # @ComponentScan includes common
+│   ├── src/main/resources/
+│   │   └── application.properties
+│   ├── Dockerfile
+│   └── pom.xml                               # Depends on gomirai-common-lib
+│
+├── AuthService/                     # Authentication Service
+│   ├── src/main/java/com/gomirai/auth/
+│   │   ├── config/
+│   │   │   └── SecurityConfig.java           # Uses common-lib JwtFilter
+│   │   ├── controller/
+│   │   │   └── AuthController.java           # Uses common-lib DTOs
+│   │   ├── dto/
+│   │   │   ├── RegisterRequest.java          # Service-specific DTOs only
+│   │   │   └── LoginRequest.java
+│   │   ├── filter/
+│   │   │   └── RateLimitingFilter.java       # Service-specific
+│   │   ├── messaging/
+│   │   │   └── UserEventsProducer.java       # Uses common-lib events
+│   │   ├── model/
+│   │   │   └── User.java                     # Uses common-lib Role enum
+│   │   ├── repository/
+│   │   │   └── UserRepository.java
+│   │   ├── service/
+│   │   │   └── AuthApplicationService.java   # Uses common-lib JwtService
+│   │   └── AuthServiceApplication.java       # @ComponentScan includes common
+│   ├── src/main/resources/
+│   │   └── application.properties
+│   ├── Dockerfile
+│   └── pom.xml                               # Depends on gomirai-common-lib
+│
+├── UserService/                     # User Profile Service
+│   ├── src/main/java/com/gomirai/user/
+│   │   ├── config/
+│   │   │   └── SecurityConfig.java           # Uses common-lib components
+│   │   ├── consumer/
+│   │   │   └── UserRegisteredEventConsumer.java  # Uses common-lib event
+│   │   ├── controller/
+│   │   │   └── UserProfileController.java    # Uses common-lib SecurityUtils
+│   │   ├── dto/
+│   │   │   ├── CreateUserProfileRequest.java # Service-specific DTOs only
+│   │   │   ├── UpdateUserProfileRequest.java
+│   │   │   └── UserProfileResponse.java
+│   │   ├── model/
+│   │   │   ├── UserProfile.java
+│   │   │   └── Address.java                  # Embedded document
+│   │   ├── repository/
+│   │   │   └── UserProfileRepository.java
+│   │   ├── service/
+│   │   │   └── UserProfileService.java       # Uses common-lib SecurityUtils
+│   │   └── UserServiceApplication.java       # @ComponentScan includes common
+│   ├── src/main/resources/
+│   │   └── application.properties
+│   ├── Dockerfile
+│   └── pom.xml                               # Depends on gomirai-common-lib
+│
+├── docs/                            # 📚 Documentation
+│   ├── PROJECT_OVERVIEW.md          # This file
+│   └── ADDING_NEW_SERVICE.md        # Guide to add new services
+│
+├── .env                             # 🔒 Environment variables (NEVER commit)
+├── env.example                      # ✅ Environment template
+├── docker-compose.yml               # 🐳 All services orchestration
+└── README.md                        # 📖 Project README
+```
+
+---
+
+## 8. API Endpoints
+
+### 8.1. Public Endpoints (No JWT Required)
+
+**Authentication:**
+```http
+POST   http://localhost:8080/api/auth/register
+POST   http://localhost:8080/api/auth/login
+```
+
+**Health Checks:**
+```http
+GET    http://localhost:8080/actuator/health        # API Gateway health
+GET    http://localhost:8080/api/auth/health        # AuthService health (via gateway)
+GET    http://localhost:8080/api/users/health       # UserService health (via gateway)
+```
+
+### 8.2. Protected Endpoints (JWT Required)
+
+**User Management:**
+```http
+GET    http://localhost:8080/api/users/{userId}     # Get profile (owner or admin)
+PUT    http://localhost:8080/api/users/{userId}     # Update profile (owner only)
+DELETE http://localhost:8080/api/users/{userId}     # Delete profile (owner only)
+GET    http://localhost:8080/api/users              # List all users (admin only)
+```
+
+**Driver Management:**
+```http
+POST   http://localhost:8080/api/drivers/apply
+GET    http://localhost:8080/api/drivers/me
+PUT    http://localhost:8080/api/drivers/me
+GET    http://localhost:8080/api/drivers/me/vehicle
+PUT    http://localhost:8080/api/drivers/me/vehicle
+PATCH  http://localhost:8080/api/drivers/me/status/online
+PATCH  http://localhost:8080/api/drivers/me/status/offline
+GET    http://localhost:8080/api/drivers/{driverId}/rating
+GET    http://localhost:8080/api/drivers?status=PENDING_VERIFICATION      # Admin
+PATCH  http://localhost:8080/api/drivers/{driverId}/approve               # Admin
+PATCH  http://localhost:8080/api/drivers/{driverId}/reject                # Admin
+PATCH  http://localhost:8080/api/drivers/{driverId}/suspend               # Admin
+PATCH  http://localhost:8080/api/drivers/{driverId}/unsuspend             # Admin
+```
+
+**Authorization Header:**
+```
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+### 8.3. Internal Endpoints (Not Exposed)
+
+```http
+POST   http://auth-service:8081/auth/validate      # JWT validation (Gateway internal)
+```
+
+---
+
+## 9. Database Schema
+
+### 9.1. AuthService - auth_db
+
+**Collection: users**
+```javascript
+{
+  "_id": ObjectId("..."),
+  "userId": UUID("550e8400-e29b-41d4-a716-446655440000"),
+  "phoneNumber": "0123456789",           // Unique, indexed
+  "password": "$2a$10$...",               // BCrypt hashed
+  "role": "CUSTOMER",                     // From common-lib Role enum
+  "createdAt": ISODate("2025-11-23T..."),
+  "updatedAt": ISODate("2025-11-23T...")
+}
+```
+
+**Indexes:**
+- `phoneNumber` (unique)
+- `userId` (unique)
+
+### 9.2. UserService - user_db
+
+**Collection: user_profiles**
+```javascript
+{
+  "_id": UUID("550e8400-e29b-41d4-a716-446655440000"),  // Same as userId from auth
+  "fullName": "Nguyen Van A",
+  "phone": "0123456789",
+  "email": "example@email.com",
+  "address": {
+    "street": "123 Main St",
+    "city": "Ho Chi Minh",
+    "state": "HCM",
+    "zipCode": "70000",
+    "country": "Vietnam"
+  },
+  "dateOfBirth": ISODate("1990-01-01T...")
+}
+```
+
+**Indexes:**
+- `_id` (primary key = userId)
+
+### 9.3. DriverService - driver_db
+
+**Collection: driver_profiles**
+```javascript
+{
+  "_id": UUID("a34d..."),                 // driverId
+  "userId": UUID("550e..."),              // Liên kết với AuthService
+  "licenseNumber": "79C1-123456",
+  "accountStatus": "PENDING_VERIFICATION",
+  "availabilityStatus": "OFFLINE",
+  "rating": 5.0,
+  "vehicle": {
+    "vehicleId": UUID("c12f..."),
+    "brand": "Toyota",
+    "model": "Vios",
+    "plateNumber": "51A-123.45",
+    "type": "CAR_4",
+    "color": "Black",
+    "registrationDate": "2022-01-10"
+  },
+  "createdAt": ISODate("2025-11-25T..."),
+  "updatedAt": ISODate("2025-11-25T...")
+}
+```
+
+**Indexes:**
+- `_id` (driverId)
+- `userId` (unique)
+
+---
+
+## 10. Development Progress
+
+### 10.1. Completed Features ✅
+
+#### Infrastructure
+- [x] Docker Compose setup với tất cả services
+- [x] Consul service discovery
+- [x] Kafka message broker
+ - [x] MongoDB databases (auth_db, user_db, driver_db)
+- [x] Multi-stage Dockerfile cho mỗi service
+- [x] **Common library (gomirai-common-lib)**
+
+#### Common Library
+- [x] **JwtService** - Token generation & validation
+- [x] **JwtAuthenticationFilter** - Spring Security filter
+- [x] **SecurityUtils** - Authorization helpers
+- [x] **GlobalExceptionHandler** - Centralized error handling
+- [x] **ErrorResponse & ValidationErrorResponse** - Standardized responses
+- [x] **UserRegisteredEvent & BaseEvent** - Kafka events
+- [x] **Role, AuthProvider enums** - Type-safe enums
+- [x] **ValidationUtil** - Input validation helpers
+- [x] **Constants** - System-wide constants
+
+#### Security
+- [x] JWT authentication implementation (common-lib)
+- [x] JWT validation ở Gateway và backend services (common-lib)
+- [x] Authorization với SecurityUtils (common-lib)
+- [x] BCrypt password hashing
+- [x] Rate limiting cho auth endpoints
+- [x] Security headers (CSP, X-Frame-Options)
+- [x] CORS configuration
+- [x] Service whitelist ở Gateway
+- [x] Actuator endpoints secured
+- [x] Kafka trusted packages whitelist
+- [x] Backend ports không exposed (internal only)
+
+#### Validation & Error Handling
+- [x] Input validation với common-lib ValidationUtil
+- [x] Custom validation messages (common-lib ValidationConstants)
+- [x] Global exception handler (common-lib)
+- [x] Standardized ErrorResponse (common-lib)
+- [x] Detailed ValidationErrorResponse (common-lib)
+- [x] No sensitive data leak trong error messages
+
+#### Services
+- [x] API Gateway với routing và security
+- [x] AuthService với register/login/validate
+- [x] UserService với CRUD operations
+- [x] DriverService MVP (driver onboarding, vehicle & availability)
+- [x] Kafka integration (producer/consumer với common-lib events)
+- [x] Event-driven user profile creation
+- [x] All services use gomirai-common-lib
+
+#### Documentation
+- [x] README.md
+- [x] ADDING_NEW_SERVICE.md - Complete guide với common-lib
+- [x] PROJECT_OVERVIEW.md - This file
+- [x] env.example - Environment template
+- [x] gomirai-common-lib/README.md - Common library documentation
+
+### 10.2. Current Status
+
+**Overall Progress:** ~65% Complete
+
+| Component | Status | Completion |
+|-----------|--------|------------|
+| Infrastructure | ✅ Done | 100% |
+| Common Library | ✅ Done | 100% |
+| API Gateway | ✅ Done | 100% |
+| AuthService | ✅ Done | 100% |
+| UserService | ✅ Done | 100% |
+| DriverService | 🚧 Partial | 60% |
+| Security | ✅ Done | 100% |
+| Validation | ✅ Done | 100% |
+| Error Handling | ✅ Done | 100% |
+| Documentation | ✅ Done | 100% |
+| Testing | 🚧 Partial | 30% |
+| Monitoring | ⏳ Planned | 0% |
+| Frontend | ⏳ Planned | 0% |
+| Additional Services | ⏳ Planned | 0% |
+
+**Legend:**
+- ✅ Done - Feature completed and tested
+- 🚧 Partial - Work in progress
+- ⏳ Planned - Not started yet
+
+---
+
+## 11. What's Next
+
+### 11.1. Short Term (Next Sprint)
+
+#### Testing
+- [ ] Unit tests cho common-lib components
+- [ ] Unit tests cho AuthService
+- [ ] Unit tests cho UserService
+- [ ] Unit tests cho DriverService (hồ sơ, trạng thái, controller)
+- [ ] Integration tests cho API Gateway
+- [ ] E2E tests cho authentication flow
+- [ ] Load testing cho rate limiting
+
+#### Monitoring & Observability
+- [ ] Prometheus metrics
+- [ ] Grafana dashboards
+- [ ] Distributed tracing (Zipkin/Jaeger)
+- [ ] Centralized logging (ELK Stack)
+- [ ] Alert rules
+
+### 11.2. Medium Term (Future Services)
+
+**Note:** All new services will use **gomirai-common-lib**
+
+#### OrderService
+- [ ] Order creation and management
+- [ ] Order status tracking
+- [ ] Integration với UserService
+- [ ] Kafka events (using common-lib BaseEvent)
+- [ ] Use common-lib security & validation
+
+#### PaymentService
+- [ ] Payment processing
+- [ ] Payment gateway integration
+- [ ] Refund handling
+- [ ] Payment history
+- [ ] Use common-lib security & validation
+
+#### NotificationService
+- [ ] Email notifications
+- [ ] SMS notifications
+- [ ] Push notifications
+- [ ] Notification templates
+- [ ] Use common-lib security & validation
+
+---
+
+## 12. Documentation
+
+### 12.1. Available Documentation
+
+| Document | Purpose | Audience |
+|----------|---------|----------|
+| **README.md** | Project overview, quick start | All developers |
+| **PROJECT_OVERVIEW.md** | Comprehensive project status | New developers, agents |
+| **ADDING_NEW_SERVICE.md** | Guide to add new microservice with common-lib | Backend developers |
+| **gomirai-common-lib/README.md** | Common library documentation | All developers |
+| **env.example** | Environment variables template | DevOps, developers |
+
+### 12.2. Key Architectural Choices
+
+1. **Common Library Pattern**
+   - Reason: DRY principle, consistent implementation, easy maintenance
+   - Trade-off: Must rebuild services when common-lib changes
+   - Solution: Semantic versioning, backward compatibility
+
+2. **Microservices over Monolith**
+   - Reason: Scalability, independent deployment, technology flexibility
+   - Trade-off: Increased complexity, distributed system challenges
+
+3. **JWT over Session-based Auth**
+   - Reason: Stateless, scalable, cross-service authentication
+   - Trade-off: Token size, revocation complexity
+   - Implementation: common-lib JwtService for consistency
+
+4. **Event-Driven Communication (Kafka)**
+   - Reason: Loose coupling, async processing, event sourcing ready
+   - Trade-off: Eventual consistency, debugging complexity
+   - Implementation: common-lib BaseEvent for type safety
+
+---
+
+## 13. Environment Configuration
+
+### 13.1. Required Environment Variables
+
+```env
+# JWT Configuration (shared across all services via common-lib)
+JWT_SECRET=BASE64:your-base64-encoded-secret-here
+
+# MongoDB URIs
+AUTH_MONGODB_URI=mongodb://username:password@mongodb:27017/auth_db?authSource=admin
+USER_MONGODB_URI=mongodb://username:password@mongodb:27017/user_db?authSource=admin
+DRIVER_MONGODB_URI=mongodb://username:password@mongodb:27017/driver_db?authSource=admin
+
+# Consul
+CONSUL_HOST=consul
+CONSUL_PORT=8500
+
+# Kafka
+KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+```
+
+### 13.2. Port Allocation
+
+| Service | Internal Port | External Port | Notes |
+|---------|---------------|---------------|-------|
+| API Gateway | 8080 | 8080 | ✅ Exposed - Frontend access |
+| AuthService | 8081 | ❌ Not exposed | Internal only |
+| UserService | 8082 | ❌ Not exposed | Internal only |
+| DriverService | 8084 | ❌ Not exposed | Internal only |
+| MongoDB | 27017 | 27017 | ✅ Exposed - Development only |
+| Kafka | 29092 (internal) | 9092 (external) | ✅ Exposed - Development only |
+| Consul | 8500 | 8500 | ✅ Exposed - UI access |
+| Zookeeper | 2181 | 2181 | ✅ Exposed - Development only |
+
+**Production Note:** MongoDB, Kafka, Zookeeper ports should NOT be exposed in production.
+
+---
+
+## 14. Development Workflow
+
+### 14.1. Local Development Setup
+
+```bash
+# 1. Clone repository
+git clone <repo-url>
+cd GoMirai
+
+# 2. Build common library FIRST
+cd gomirai-common-lib
+mvn clean install
+cd ..
+
+# 3. Create .env file
+cp env.example .env
+# Edit .env and set JWT_SECRET, MongoDB URIs
+
+# 4. Start all services
+docker-compose up -d
+
+# 5. Verify services
+docker-compose ps
+curl http://localhost:8500/v1/catalog/services  # Check Consul
+
+# 6. Test authentication
+curl -X POST http://localhost:8080/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"phoneNumber":"0123456789","password":"SecurePass123"}'
+```
+
+### 14.2. Development Guidelines
+
+**Coding Standards:**
+- Use gomirai-common-lib for shared components
+- Use Lombok to reduce boilerplate
+- Always use `@Valid` for request DTOs
+- Use common-lib SecurityUtils for authorization
+- Use common-lib GlobalExceptionHandler
+- Add comprehensive logging (INFO for business, ERROR for exceptions)
+- Never log sensitive data (passwords, tokens)
+
+**When to Add to Common Library:**
+- Component is used by 2+ services
+- Security-related components (always shared)
+- DTOs shared across services (events, responses)
+- Utilities that enforce consistency (validation, formatting)
+- Constants and enums used by multiple services
+
+**Git Workflow:**
+- Feature branches: `feature/order-service`
+- Bugfix branches: `bugfix/fix-jwt-validation`
+- Common-lib changes: `feature/common-lib-add-validation`
+- Always create PR for review
+- Squash commits before merge
+
+### 14.3. Adding New Service
+
+**Follow this checklist:**
+1. ✅ Read `ADDING_NEW_SERVICE.md`
+2. ✅ Create service from Spring Initializr
+3. ✅ Add gomirai-common-lib dependency
+4. ✅ Add @ComponentScan to include common packages
+5. ✅ Use common-lib security (NO custom JwtService!)
+6. ✅ Use common-lib validation and error handling
+7. ✅ Use common-lib events for Kafka
+8. ✅ Create Dockerfile (multi-stage build)
+9. ✅ Update docker-compose.yml (no exposed ports)
+10. ✅ Update API Gateway whitelist
+11. ✅ Update .env and env.example
+12. ✅ Test thoroughly
+13. ✅ Update documentation
+
+---
+
+## 15. Summary & Quick Start
+
+### 15.1. TL;DR
+
+**GoMirai** là một microservices system với:
+- ✅ **4 services:** API Gateway, AuthService, UserService, DriverService
+- ✅ **1 common library:** gomirai-common-lib (security, DTOs, utils)
+- ✅ **Security:** JWT authentication, authorization, rate limiting
+- ✅ **Event-Driven:** Kafka-based messaging
+- ✅ **Service Discovery:** Consul
+- ✅ **Docker Ready:** Containerized và orchestrated với Docker Compose
+- ✅ **DRY Principle:** Shared components via common-lib
+
+**Access Points:**
+- Frontend → `http://localhost:8080` (API Gateway)
+- Consul UI → `http://localhost:8500`
+- Backend services → Internal only, không exposed
+
+### 15.2. Quick Commands
+
+```bash
+# Build common library
+cd gomirai-common-lib && mvn clean install && cd ..
+
+# Start everything
+docker-compose up -d
+
+# Stop everything
+docker-compose down
+
+# View logs
+docker-compose logs -f
+
+# Rebuild service after common-lib change
+docker-compose build --no-cache service-name
+docker-compose up -d service-name
+
+# Check service health
+curl http://localhost:8080/actuator/health
+
+# List Consul services
+curl http://localhost:8500/v1/catalog/services | jq
+```
+
+---
+
+**🎉 End of Document**
+
+Tài liệu này cung cấp comprehensive overview của GoMirai project với **gomirai-common-lib**. Để biết thêm chi tiết, xem các documents khác trong thư mục `docs/`.
+
+**Happy Coding! 🚀**
