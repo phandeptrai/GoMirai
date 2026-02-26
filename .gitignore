@@ -13,6 +13,7 @@
 # K8s — chỉ ignore file chứa credentials thật, KHÔNG ignore template
 k8s/secrets.yaml
 k8s/create-secret.ps1
+k8s/create-secret.sh
 
 # IDE
 .idea/
