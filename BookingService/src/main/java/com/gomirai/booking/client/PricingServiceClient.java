@@ -31,6 +31,8 @@ public class PricingServiceClient {
 
     private final DiscoveryClient discoveryClient;
     private final RestTemplate restTemplate;
+    private final java.util.concurrent.atomic.AtomicInteger nextInstanceIndex = new java.util.concurrent.atomic.AtomicInteger(
+            0);
 
     @Value("${booking.pricing-service.timeout:5000}")
     private int timeoutMs;
@@ -153,7 +155,17 @@ public class PricingServiceClient {
                 return null;
             }
             log.debug("Found {} instance(s) for PricingService", instances.size());
-            return instances.get(0);
+
+            // Round Robin Load Balancing
+            int index = nextInstanceIndex.getAndIncrement() % instances.size();
+            // Handle negative result from getAndIncrement overflow
+            if (index < 0)
+                index = 0;
+
+            ServiceInstance selected = instances.get(index);
+            log.info("Selected PricingService instance (Round Robin): {}:{} (Index: {})",
+                    selected.getHost(), selected.getPort(), index);
+            return selected;
         } catch (Exception e) {
             log.error("Error getting service instance for {}", PRICING_SERVICE_NAME, e);
             return null;

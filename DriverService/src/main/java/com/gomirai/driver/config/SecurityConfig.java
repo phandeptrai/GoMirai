@@ -1,7 +1,10 @@
 package com.gomirai.driver.config;
 
 import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -24,6 +27,27 @@ public class SecurityConfig {
 
 	private final JwtAuthenticationFilter jwtAuthenticationFilter;
 	private final JwtAuthenticationEntryPoint authenticationEntryPoint;
+
+	// ✅ FIX: Đọc CORS từ ENV var thay vì hardcode localhost
+	// Production: set CORS_ALLOWED_ORIGINS qua K8s ConfigMap
+	// Local dev fallback: localhost ports
+	@Value("${cors.allowed.origins:http://localhost:8080,http://api-gateway:8080}")
+	private String allowedOrigins;
+
+	@Value("${cors.allowed.methods:GET,POST,PUT,PATCH,DELETE,OPTIONS}")
+	private String allowedMethods;
+
+	@Value("${cors.allowed.headers:*}")
+	private String allowedHeaders;
+
+	@Value("${cors.exposed.headers:Authorization}")
+	private String exposedHeaders;
+
+	@Value("${cors.allow.credentials:true}")
+	private boolean allowCredentials;
+
+	@Value("${cors.max.age:3600}")
+	private long maxAge;
 
 	public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
 			JwtAuthenticationEntryPoint authenticationEntryPoint) {
@@ -57,13 +81,38 @@ public class SecurityConfig {
 	@Bean
 	public CorsConfigurationSource corsConfigurationSource() {
 		CorsConfiguration configuration = new CorsConfiguration();
-		// Allow frontend origins (development)
-		configuration.setAllowedOriginPatterns(Arrays.asList("http://localhost:*", "http://127.0.0.1:*"));
-		configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-		configuration.setAllowedHeaders(Arrays.asList("*"));
-		configuration.setExposedHeaders(Arrays.asList("Authorization"));
-		configuration.setAllowCredentials(true);
-		configuration.setMaxAge(3600L);
+
+		// ✅ FIX: Đọc origins từ ENV var (không hardcode localhost)
+		List<String> origins = Arrays.stream(allowedOrigins.split(","))
+				.map(String::trim)
+				.filter(s -> !s.isEmpty())
+				.collect(Collectors.toList());
+		configuration.setAllowedOrigins(origins);
+
+		List<String> methods = Arrays.stream(allowedMethods.split(","))
+				.map(String::trim)
+				.filter(s -> !s.isEmpty())
+				.collect(Collectors.toList());
+		configuration.setAllowedMethods(methods);
+
+		if ("*".equals(allowedHeaders.trim())) {
+			configuration.setAllowedHeaders(Arrays.asList("*"));
+		} else {
+			List<String> headers = Arrays.stream(allowedHeaders.split(","))
+					.map(String::trim)
+					.filter(s -> !s.isEmpty())
+					.collect(Collectors.toList());
+			configuration.setAllowedHeaders(headers);
+		}
+
+		List<String> exposed = Arrays.stream(exposedHeaders.split(","))
+				.map(String::trim)
+				.filter(s -> !s.isEmpty())
+				.collect(Collectors.toList());
+		configuration.setExposedHeaders(exposed);
+
+		configuration.setAllowCredentials(allowCredentials);
+		configuration.setMaxAge(maxAge);
 
 		UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
 		source.registerCorsConfiguration("/**", configuration);

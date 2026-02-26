@@ -47,12 +47,14 @@ public class RateLimitingService {
     /**
      * Tạo bucket mới với cấu hình rate limit.
      * 
-     * Bandwidth.classic(100, Refill.intervally(100, Duration.ofMinutes(1))):
-     * - Dung lượng tối đa: 100 tokens
-     * - Nạp lại: 100 tokens mỗi 1 phút (intervally = nạp cùng lúc)
+     * Bandwidth.classic(1000, Refill.intervally(1000, Duration.ofMinutes(1))):
+     * - Dung lượng tối đa: 1000 tokens
+     * - Nạp lại: 1000 tokens mỗi 1 phút (intervally = nạp cùng lúc)
+     * 
+     * NOTE: Tăng từ 100 lên 1000 để hỗ trợ load testing với nhiều users
      */
     private Bucket createNewBucket() {
-        Bandwidth limit = Bandwidth.classic(100, Refill.intervally(100, Duration.ofMinutes(1)));
+        Bandwidth limit = Bandwidth.classic(1000, Refill.intervally(1000, Duration.ofMinutes(1)));
         return Bucket.builder()
                 .addLimit(limit)
                 .build();

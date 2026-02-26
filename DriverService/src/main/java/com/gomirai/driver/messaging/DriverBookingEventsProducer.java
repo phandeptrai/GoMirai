@@ -29,6 +29,12 @@ public class DriverBookingEventsProducer {
     @Value("${kafka.topic.driver-booking-offer-notification:driver.booking.offer.notification}")
     private String driverOfferNotificationTopic;
 
+    /**
+     * Publish sự kiện tài xế nhận cuốc
+     * 
+     * Consumer: BookingService (DriverEventsConsumer)
+     * Mục đích: Atomic update booking status PENDING → MATCHED, gán driverId
+     */
     public void publishDriverAccepted(DriverAcceptedEvent event) {
         try {
             kafkaTemplate.send(driverAcceptedTopic, event.getBookingId().toString(), event);
@@ -41,8 +47,13 @@ public class DriverBookingEventsProducer {
     }
 
     /**
-     * Publish driver offer event WITH userId for NotificationService to push
-     * WebSocket
+     * Publish sự kiện notification booking offer cho tài xế
+     * 
+     * Consumer: NotificationService (DriverBookingOfferConsumer)
+     * Mục đích: Gửi WebSocket realtime "Cuốc mới!" cho driver app
+     * 
+     * Lưu ý: Event đã có userId (mapped từ driverId) để NotificationService push
+     * đúng user
      */
     public void publishDriverOfferNotification(DriverBookingOfferEvent event) {
         try {

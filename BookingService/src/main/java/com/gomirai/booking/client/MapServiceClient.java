@@ -32,6 +32,8 @@ public class MapServiceClient {
 
     private final DiscoveryClient discoveryClient;
     private final RestTemplate restTemplate;
+    private final java.util.concurrent.atomic.AtomicInteger nextInstanceIndex = new java.util.concurrent.atomic.AtomicInteger(
+            0);
 
     @Value("${booking.map-service.timeout:5000}")
     private int timeoutMs;
@@ -141,8 +143,17 @@ public class MapServiceClient {
                 return null;
             }
             log.debug("Found {} instance(s) for MapService", instances.size());
-            // Return first available instance (could implement load balancing here)
-            return instances.get(0);
+
+            // Round Robin Load Balancing
+            int index = nextInstanceIndex.getAndIncrement() % instances.size();
+            // Handle overflow
+            if (index < 0)
+                index = 0;
+
+            ServiceInstance selected = instances.get(index);
+            log.info("Selected MapService instance (Round Robin): {}:{} (Index: {})",
+                    selected.getHost(), selected.getPort(), index);
+            return selected;
         } catch (Exception e) {
             log.error("Error getting service instance for {}", MAP_SERVICE_NAME, e);
             return null;

@@ -54,6 +54,12 @@ public class BookingEventsProducer {
     @Value("${kafka.topic.refund-requested:refund.requested}")
     private String refundRequestedTopic;
 
+    /**
+     * Publish sự kiện thay đổi trạng thái booking
+     * 
+     * Consumer: NotificationService (BookingStatusConsumer)
+     * Mục đích: Gửi thông báo real-time cho customer/driver qua WebSocket
+     */
     public void publishBookingStatusChangedEvent(com.gomirai.common.dto.event.BookingStatusChangedEvent event) {
         try {
             kafkaTemplate.send(statusChangedTopic, event.getBookingId().toString(), event);
@@ -65,6 +71,14 @@ public class BookingEventsProducer {
         }
     }
 
+    /**
+     * Publish sự kiện tìm tài xế cho booking mới
+     * 
+     * Consumers:
+     * 1. TrackingService (BookingSearchDriversConsumer) - Tìm tài xế gần điểm đón
+     * 2. DriverService (BookingSearchDriversConsumer) - Gửi booking offer cho tài
+     * xế
+     */
     public void publishSearchDriversEvent(BookingSearchDriversEvent event) {
         try {
             kafkaTemplate.send(searchDriversTopic, event.getBookingId().toString(), event);
@@ -76,6 +90,12 @@ public class BookingEventsProducer {
         }
     }
 
+    /**
+     * Publish sự kiện booking đã được gán cho tài xế
+     * 
+     * Consumer: TrackingService (BookingAssignedConsumer)
+     * Mục đích: Dừng tìm tài xế, cập nhật trạng thái tracking
+     */
     public void publishBookingAssignedEvent(BookingAssignedEvent event) {
         try {
             kafkaTemplate.send(assignedTopic, event.getBookingId().toString(), event);
@@ -87,6 +107,12 @@ public class BookingEventsProducer {
         }
     }
 
+    /**
+     * Publish sự kiện booking hoàn thành
+     * 
+     * Consumer: PaymentService (BookingCompletedConsumer)
+     * Mục đích: Xử lý thanh toán cuối cùng, trả tiền cho tài xế (nếu WALLET)
+     */
     public void publishBookingCompletedEvent(BookingCompletedEvent event) {
         try {
             kafkaTemplate.send(completedTopic, event.getBookingId().toString(), event);
@@ -98,6 +124,12 @@ public class BookingEventsProducer {
         }
     }
 
+    /**
+     * Publish sự kiện booking bị hủy
+     * 
+     * Consumer: TrackingService (BookingCanceledConsumer)
+     * Mục đích: Dừng tìm tài xế, cleanup tracking state
+     */
     public void publishBookingCanceledEvent(BookingCanceledEvent event) {
         try {
             kafkaTemplate.send(canceledTopic, event.getBookingId().toString(), event);
@@ -110,8 +142,12 @@ public class BookingEventsProducer {
     }
 
     /**
-     * Publish refund request event to PaymentService
-     * This is used when a booking paid with WALLET is canceled
+     * Publish sự kiện yêu cầu hoàn tiền
+     * 
+     * Consumer: PaymentService (RefundKafkaConsumer)
+     * Mục đích: Hoàn tiền vào ví customer khi hủy booking đã thanh toán WALLET
+     * 
+     * Trigger: Khi booking thanh toán bằng WALLET bị hủy hoặc không tìm được tài xế
      */
     public void publishRefundRequestedEvent(RefundRequestedEvent event) {
         try {

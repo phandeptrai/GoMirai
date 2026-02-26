@@ -10,6 +10,10 @@
 **/application-secrets.properties
 **/application-*.secrets.properties
 
+# K8s — chỉ ignore file chứa credentials thật, KHÔNG ignore template
+k8s/secrets.yaml
+k8s/create-secret.ps1
+
 # IDE
 .idea/
 .vscode/

@@ -27,6 +27,14 @@ public class DriverAvailabilityEventsProducer {
 	@Value("${kafka.topic.driver-availability-changed:driver-availability-changed}")
 	private String topicName;
 
+	/**
+	 * Publish sự kiện tài xế thay đổi trạng thái nhận cuốc
+	 * 
+	 * Consumer: TrackingService (DriverAvailabilityChangedConsumer)
+	 * Mục đích: Cập nhật metadata trong Redis GEO (ONLINE/OFFLINE/ON_TRIP)
+	 * 
+	 * Trigger: Driver bật/tắt chế độ nhận cuốc, bắt đầu/kết thúc chuyến đi
+	 */
 	public void publishAvailabilityChanged(DriverAvailabilityChangedEvent event) {
 		try {
 			event.validate();

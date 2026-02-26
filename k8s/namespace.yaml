@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gomirai
+  labels:
+    name: gomirai
+    environment: production

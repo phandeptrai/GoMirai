@@ -33,10 +33,13 @@ public class UserEventsProducer {
     }
 
     /**
-     * Gửi event UserRegistered khi user đăng ký thành công.
+     * Publish sự kiện user đăng ký thành công
      * 
-     * @param event Chứa thông tin user mới (userId, phoneNumber, role, email,
-     *              fullName, provider)
+     * Consumers:
+     * 1. UserService (UserRegisteredEventConsumer) - Tạo UserProfile
+     * 2. PaymentService (UserKafkaConsumer) - Tạo Wallet cho user mới
+     * 
+     * Trigger: Sau khi đăng ký LOCAL hoặc Google OAuth thành công
      */
     public void sendUserRegistered(UserRegisteredEvent event) {
         // Sử dụng userId làm key để đảm bảo các message cùng user đi vào cùng partition

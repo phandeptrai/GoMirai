@@ -25,6 +25,13 @@ public class DriverBookingEventsProducer {
     @Value("${kafka.topic.driver-booking-offer:driver.booking.offer}")
     private String driverBookingOfferTopic;
 
+    /**
+     * Publish sự kiện gửi booking offer cho tài xế
+     * 
+     * Consumer: DriverService (DriverBookingOfferConsumer)
+     * Mục đích: Lưu offer vào DB, sau đó DriverService publish notification cho
+     * NotificationService
+     */
     public void publishDriverBookingOffer(DriverBookingOfferEvent event) {
         try {
             kafkaTemplate.send(driverBookingOfferTopic, event.getDriverId().toString(), event);
