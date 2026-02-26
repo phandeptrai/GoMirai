@@ -1,265 +1,5 @@
-# =============================================================================
-# GoMirai Infrastructure - Kubernetes Manifests
-# Consul | Zookeeper | Kafka
-# =============================================================================
-# ⚠️  QUAN TRỌNG VỀ CONSUL TRONG KUBERNETES:
-#
-# Hệ thống GoMirai dùng Consul làm service registry cho microservice-to-microservice
-# calls. Các service dùng DiscoveryClient.getInstances("ServiceName") để lấy pod IP:port
-# rồi gọi HTTP trực tiếp (không qua K8s Service ClusterIP).
-#
-# Flow:
-#   BookingService → Consul → [MapService pod IP: 10.100.x.x:8086]
-#                   → HTTP GET http://10.100.x.x:8086/api/map/directions
-#
-# Điều này có nghĩa:
-#   1. Consul PHẢI ổn định (StatefulSet + PVC, không phải Deployment)
-#   2. Consul PHẢI health-check được pod IP (GKE cho phép: pod-to-pod trong namespace)
-#   3. Mỗi service pod PHẢI đăng ký đúng IP của nó (prefer-ip-address=true)
-#   4. K8s Service objects vẫn cần THIẾT cho:
-#      - Consul UI (consul-service:8500)
-#      - Kafka consumer connections (kafka-service:29092)
-#      - Initial service startup
-# =============================================================================
-
 # ─────────────────────────────────────────────────────────────────────────────
-# CONSUL — StatefulSet (thay Deployment để giữ data qua pod restart)
-# ─────────────────────────────────────────────────────────────────────────────
----
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: consul
-  namespace: gomirai
-  labels:
-    app: consul
-spec:
-  serviceName: consul-headless # ← headless service cho stable DNS: consul-0.consul-headless
-  replicas: 1 # Để 1 cho student project (HA cần 3, nhưng tốn tài nguyên)
-  selector:
-    matchLabels:
-      app: consul
-  template:
-    metadata:
-      labels:
-        app: consul
-    spec:
-      terminationGracePeriodSeconds: 10
-      containers:
-        - name: consul
-          image: hashicorp/consul:1.17
-          ports:
-            - containerPort: 8500
-              name: http
-            - containerPort: 8600
-              name: dns
-              protocol: UDP
-            - containerPort: 8300
-              name: server
-            - containerPort: 8301
-              name: serf-lan
-          command:
-            - consul
-            - agent
-            - -server
-            - -ui
-            - -bootstrap-expect=1
-            - -client=0.0.0.0
-            - -data-dir=/consul/data # ← Lưu vào PVC để sống sót qua restart
-            - -bind=0.0.0.0
-            - -advertise=$(POD_IP)
-          env:
-            - name: CONSUL_LOG_LEVEL
-              value: "warn"
-            - name: POD_IP
-              valueFrom:
-                fieldRef:
-                  fieldPath: status.podIP
-          resources:
-            requests:
-              memory: "128Mi"
-              cpu: "100m"
-            limits:
-              memory: "256Mi"
-              cpu: "200m"
-          readinessProbe:
-            exec:
-              command: ["consul", "members"]
-            initialDelaySeconds: 10
-            periodSeconds: 10
-            failureThreshold: 3
-          livenessProbe:
-            exec:
-              command: ["consul", "members"]
-            initialDelaySeconds: 30
-            periodSeconds: 15
-            failureThreshold: 3
-          volumeMounts:
-            - name: consul-data
-              mountPath: /consul/data
-  # PVC template — tự động tạo PersistentVolumeClaim cho mỗi replica
-  volumeClaimTemplates:
-    - metadata:
-        name: consul-data
-      spec:
-        accessModes: ["ReadWriteOnce"]
-        # GKE tự chọn storage class (standard-rwo)
-        resources:
-          requests:
-            storage: 1Gi
-
----
-# Headless Service — để StatefulSet pod có stable DNS
-# consul-0.consul-headless.gomirai.svc.cluster.local
-apiVersion: v1
-kind: Service
-metadata:
-  name: consul-headless
-  namespace: gomirai
-spec:
-  clusterIP: None # ← headless
-  selector:
-    app: consul
-  ports:
-    - name: http
-      port: 8500
-      targetPort: 8500
-    - name: server
-      port: 8300
-      targetPort: 8300
-    - name: serf-lan-tcp
-      port: 8301
-      targetPort: 8301
-    - name: serf-lan-udp
-      port: 8301
-      targetPort: 8301
-      protocol: UDP
-
----
-# ClusterIP Service — cho microservices kết nối Consul qua DNS "consul-service:8500"
-# (ConfigMap: SPRING_CLOUD_CONSUL_HOST=consul-service)
-apiVersion: v1
-kind: Service
-metadata:
-  name: consul-service
-  namespace: gomirai
-spec:
-  selector:
-    app: consul
-  ports:
-    - name: http
-      port: 8500
-      targetPort: 8500
-    - name: dns
-      port: 8600
-      targetPort: 8600
-      protocol: UDP
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# ZOOKEEPER — required by Kafka
-# ─────────────────────────────────────────────────────────────────────────────
----
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: zookeeper
-  namespace: gomirai
-  labels:
-    app: zookeeper
-spec:
-  serviceName: zookeeper-headless
-  replicas: 1
-  selector:
-    matchLabels:
-      app: zookeeper
-  template:
-    metadata:
-      labels:
-        app: zookeeper
-    spec:
-      terminationGracePeriodSeconds: 10
-      containers:
-        - name: zookeeper
-          image: confluentinc/cp-zookeeper:7.5.0
-          ports:
-            - containerPort: 2181
-              name: client
-          env:
-            - name: ZOOKEEPER_CLIENT_PORT
-              value: "2181"
-            - name: ZOOKEEPER_TICK_TIME
-              value: "2000"
-            - name: ZOOKEEPER_DATA_DIR
-              value: /var/lib/zookeeper/data
-            - name: ZOOKEEPER_LOG_DIR
-              value: /var/lib/zookeeper/log
-          resources:
-            requests:
-              memory: "256Mi"
-              cpu: "100m"
-            limits:
-              memory: "512Mi"
-              cpu: "250m"
-          readinessProbe:
-            exec:
-              command:
-                ["bash", "-c", "echo ruok | nc localhost 2181 | grep imok"]
-            initialDelaySeconds: 20
-            periodSeconds: 10
-            timeoutSeconds: 10
-            failureThreshold: 3
-          livenessProbe:
-            exec:
-              command:
-                ["bash", "-c", "echo ruok | nc localhost 2181 | grep imok"]
-            initialDelaySeconds: 30
-            periodSeconds: 15
-            timeoutSeconds: 10
-            failureThreshold: 3
-          volumeMounts:
-            - name: zookeeper-data
-              mountPath: /var/lib/zookeeper
-  volumeClaimTemplates:
-    - metadata:
-        name: zookeeper-data
-      spec:
-        accessModes: ["ReadWriteOnce"]
-        resources:
-          requests:
-            storage: 2Gi
-
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: zookeeper-headless
-  namespace: gomirai
-spec:
-  clusterIP: None
-  selector:
-    app: zookeeper
-  ports:
-    - port: 2181
-      targetPort: 2181
-
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: zookeeper-service
-  namespace: gomirai
-spec:
-  selector:
-    app: zookeeper
-  ports:
-    - port: 2181
-      targetPort: 2181
-      name: client
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# KAFKA — StatefulSet với PVC
+# KAFKA — StatefulSet (FIXED cho Kubernetes)
 # ─────────────────────────────────────────────────────────────────────────────
 ---
 apiVersion: apps/v1
@@ -286,39 +26,43 @@ spec:
           image: confluentinc/cp-kafka:7.5.0
           ports:
             - containerPort: 9092
-              name: external
-            - containerPort: 29092
-              name: internal
+              name: broker
           env:
             - name: KAFKA_BROKER_ID
               value: "1"
+
             - name: KAFKA_ZOOKEEPER_CONNECT
-              # ✅ Trỏ đến K8s Service của Zookeeper
               value: "zookeeper-service:2181"
+
+            # ✅ Lắng nghe trên tất cả interface
             - name: KAFKA_LISTENERS
-              value: "PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092"
+              value: "PLAINTEXT://0.0.0.0:9092"
+
+            # ✅ Advertise đúng DNS của StatefulSet pod
             - name: KAFKA_ADVERTISED_LISTENERS
-              # ✅ INTERNAL: dùng cho service-to-service (kafka-service DNS)
-              # ✅ EXTERNAL: dùng khi cần debug từ ngoài
-              value: "PLAINTEXT://kafka-service:29092,PLAINTEXT_HOST://kafka-service:9092"
+              value: "PLAINTEXT://kafka-0.kafka-headless.gomirai.svc.cluster.local:9092"
+
             - name: KAFKA_LISTENER_SECURITY_PROTOCOL_MAP
-              value: "PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT"
+              value: "PLAINTEXT:PLAINTEXT"
+
             - name: KAFKA_INTER_BROKER_LISTENER_NAME
               value: "PLAINTEXT"
+
             - name: KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR
               value: "1"
+
             - name: KAFKA_AUTO_CREATE_TOPICS_ENABLE
-              value: "true" # Giữ true cho dev, nhưng đặt default partition = 10
+              value: "true"
+
             - name: KAFKA_NUM_PARTITIONS
-              value: "10" # ≥ maxReplicas(booking=10) để tất cả pods consume song song
+              value: "10"
+
             - name: KAFKA_DEFAULT_REPLICATION_FACTOR
-              value: "1" # Single broker nên chỉ có replication factor = 1
+              value: "1"
+
             - name: KAFKA_LOG_DIRS
-              value: /var/lib/kafka/data
-            - name: KAFKA_LOG_RETENTION_HOURS
-              value: "168"
-            - name: KAFKA_LOG_RETENTION_BYTES
-              value: "1073741824" # 1GB
+              value: "/var/lib/kafka/data"
+
           resources:
             requests:
               memory: "512Mi"
@@ -326,16 +70,18 @@ spec:
             limits:
               memory: "1Gi"
               cpu: "500m"
+
           readinessProbe:
             exec:
               command:
                 - bash
                 - -c
                 - "kafka-topics --bootstrap-server localhost:9092 --list"
-            initialDelaySeconds: 30
+            initialDelaySeconds: 40
             periodSeconds: 15
-            timeoutSeconds: 15
-            failureThreshold: 3
+            timeoutSeconds: 10
+            failureThreshold: 5
+
           livenessProbe:
             exec:
               command:
@@ -344,11 +90,13 @@ spec:
                 - "kafka-topics --bootstrap-server localhost:9092 --list"
             initialDelaySeconds: 60
             periodSeconds: 20
-            timeoutSeconds: 15
-            failureThreshold: 3
+            timeoutSeconds: 10
+            failureThreshold: 5
+
           volumeMounts:
             - name: kafka-data
-              mountPath: /var/lib/kafka
+              mountPath: /var/lib/kafka/data
+
   volumeClaimTemplates:
     - metadata:
         name: kafka-data
@@ -359,6 +107,7 @@ spec:
             storage: 10Gi
 
 ---
+# Headless service (giữ nguyên nhưng chỉ cần 9092)
 apiVersion: v1
 kind: Service
 metadata:
@@ -369,16 +118,11 @@ spec:
   selector:
     app: kafka
   ports:
-    - name: internal
-      port: 29092
-      targetPort: 29092
-    - name: external
-      port: 9092
+    - port: 9092
       targetPort: 9092
 
 ---
-# ✅ ClusterIP Service — microservices kết nối Kafka qua kafka-service:29092
-# ConfigMap: SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka-service:9092
+# ClusterIP service cho microservices
 apiVersion: v1
 kind: Service
 metadata:
@@ -388,9 +132,5 @@ spec:
   selector:
     app: kafka
   ports:
-    - name: internal
-      port: 29092
-      targetPort: 29092
-    - name: external
-      port: 9092
+    - port: 9092
       targetPort: 9092
