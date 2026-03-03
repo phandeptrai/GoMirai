@@ -74,16 +74,29 @@ jobs:
           ALLOW_PLAINTEXT_LISTENER: yes
     steps:
       - uses: actions/checkout@v3
-      - name: Set up JDK 17
+      - name: Set up JDK 21
         uses: actions/setup-java@v3
         with:
-          java-version: "17"
+          java-version: "21"
           distribution: "temurin"
           cache: "maven"
-      - name: 🛠️ Maven Test
+
+      - name: 📦 Install Common Library
+        run: |
+          cd gomirai-common-lib
+          mvn install -DskipTests
+
+      - name: 🧪 Maven Test
         run: |
           SVC="${{ matrix.service }}"
-          [[ "$SVC" == "api-gateway" ]] && FOLDER="ApiGateway" || FOLDER=$(echo "$SVC" | sed 's/-service//' | awk '{print toupper(substr($0,1,1))substr($0,2)}' )Service
+          if [[ "$SVC" == "api-gateway" ]]; then
+            FOLDER="ApiGateway"
+          else
+            # Chú ý: sed 's/-service//' s? bi?n 'auth-service' thành 'auth'
+            # awk sau đó s? bi?n 'auth' thành 'Auth' và c?ng thêm 'Service'
+            FOLDER=$(echo "$SVC" | sed 's/-service//' | awk '{print toupper(substr($0,1,1))substr($0,2)}' )Service
+          fi
+          echo "Testing in folder: $FOLDER"
           cd $FOLDER && chmod +x mvnw && ./mvnw clean test
 
   # ==========================================
