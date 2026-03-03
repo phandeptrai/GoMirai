@@ -48,6 +48,7 @@ jobs:
   # ==========================================
   ci:
     name: 🧪 CI - Unit Tests
+    needs: changes
     # Only run if there are changed services
     if: |
       needs.changes.outputs.services != '[]' && 
