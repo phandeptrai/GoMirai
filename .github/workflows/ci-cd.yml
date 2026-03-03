@@ -62,11 +62,11 @@ jobs:
     runs-on: ubuntu-latest
     services:
       mongodb:
-        image: mongo:6.0.8
+        image: mongo:6.0
         ports:
           - "27017:27017"
       kafka:
-        image: bitnami/kafka:3.4.1
+        image: bitnami/kafka:3.4
         ports:
           - "9092:9092"
         env:
