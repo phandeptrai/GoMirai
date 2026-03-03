@@ -1,5 +1,9 @@
 package com.gomirai.user.service;
 
+/**
+ * CI/CD Trigger Comment: UserService is active.
+ */
+
 import java.util.Date;
 import java.util.List;
 import java.util.UUID;

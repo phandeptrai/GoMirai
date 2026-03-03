@@ -1,5 +1,9 @@
 package com.gomirai.auth.service;
 
+/**
+ * CI/CD Trigger Comment: AuthService is active.
+ */
+
 import java.util.Optional;
 import java.util.UUID;
 
