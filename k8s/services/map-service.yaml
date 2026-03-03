@@ -1,13 +1,19 @@
+# ─────────────────────────────────────────────
+# MAP SERVICE (8086)
+# ─────────────────────────────────────────────
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: api-gateway
+  name: map-service
   namespace: gomirai
+  labels:
+    app: map-service
+    tier: backend
 spec:
-  replicas: 2
+  replicas: 3
   selector:
     matchLabels:
-      app: api-gateway
+      app: map-service
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -16,38 +22,39 @@ spec:
   template:
     metadata:
       labels:
-        app: api-gateway
+        app: map-service
     spec:
+      terminationGracePeriodSeconds: 30
       containers:
-        - name: api-gateway
-          image: asia-southeast1-docker.pkg.dev/gomirai-prod/gomirai-repo/api-gateway:latest
+        - name: map-service
+          image: asia-southeast1-docker.pkg.dev/gomirai-prod/gomirai-repo/map-service:latest
           ports:
-            - containerPort: 8080
+            - containerPort: 8086
+              name: http
           envFrom:
             - configMapRef:
                 name: gomirai-config
             - secretRef:
                 name: gomirai-secrets
-          resources:
             requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
               memory: "512Mi"
               cpu: "250m"
-            limits:
-              memory: "1Gi"
-              cpu: "500m"
-          livenessProbe:
-            httpGet:
-              path: /actuator/health
-              port: 8080
-            initialDelaySeconds: 90
-            periodSeconds: 15
-            failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /actuator/health
-              port: 8080
+              port: 8086
             initialDelaySeconds: 45
             periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8086
+            initialDelaySeconds: 90
+            periodSeconds: 15
             failureThreshold: 3
           lifecycle:
             preStop:
@@ -57,39 +64,33 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: api-gateway-service
+  name: map-service
   namespace: gomirai
 spec:
-  type: ClusterIP # ✅ Chỉ accessible nội bộ — nginx là entry point duy nhất
   selector:
-    app: api-gateway
+    app: map-service
   ports:
-    - port: 8080
-      targetPort: 8080
+    - port: 8086
+      targetPort: 8086
       name: http
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: api-gateway-hpa
+  name: map-service-hpa
   namespace: gomirai
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: api-gateway
-  minReplicas: 2
-  maxReplicas: 10
+    name: map-service
+  minReplicas: 3
+  maxReplicas: 6
   metrics:
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 70
-    - type: Resource
-      resource:
-        name: memory
-        target:
-          type: Utilization
-          averageUtilization: 80
+          averageUtilization: 50
+---
