@@ -48,10 +48,11 @@ jobs:
   # ==========================================
   ci:
     name: 🧪 CI - Unit Tests
-    # Trigger: Push or PR to dev/main
+    # Only run if there are changed services
     if: |
-      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) ||
-      (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'dev'))
+      needs.changes.outputs.services != '[]' && 
+      ((github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) ||
+       (github.event_name == 'pull_request' && (github.base_ref == 'main' || github.base_ref == 'dev')))
     strategy:
       fail-fast: false
       matrix:
@@ -91,7 +92,10 @@ jobs:
   deploy-staging:
     name: 🏗️ Deploy Staging
     needs: [changes, ci]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
+    # Only run if there are changed services and it's a push to dev/main
+    if: |
+      needs.changes.outputs.services != '[]' &&
+      github.event_name == 'push' && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main')
     strategy:
       matrix:
         service: ${{ fromJson(needs.changes.outputs.services) }}

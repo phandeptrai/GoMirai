@@ -1,7 +1,7 @@
 package com.gomirai.user.service;
 
 /**
- * CI/CD Trigger Comment: UserService is active.
+ * CI/CD Trigger Comment: UserService is acti
  */
 
 import java.util.Date;
