@@ -12,4 +12,5 @@ public class NearbyDriverRequest {
     private VehicleType vehicleType;
     private DriverAvailabilityStatus status; // Optional, default to ONLINE/AVAILABLE
     private int limit = 10;
+    private boolean enrichDetails = false;
 }

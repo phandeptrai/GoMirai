@@ -59,6 +59,7 @@ data:
 
             # WebSocket support (SockJS/STOMP — NotificationService)
             location /ws/ {
+                proxy_set_header X-Internal-Api-Key ""; # Security: Strip internal key from outside
                 proxy_pass http://api_gateway;
                 proxy_http_version 1.1;
                 proxy_set_header Upgrade $http_upgrade;
@@ -73,6 +74,7 @@ data:
 
             # Tất cả API requests
             location / {
+                proxy_set_header X-Internal-Api-Key ""; # Security: Strip internal key from outside
                 proxy_pass http://api_gateway;
                 proxy_http_version 1.1;
                 proxy_set_header Connection "";   # Enable keepalive

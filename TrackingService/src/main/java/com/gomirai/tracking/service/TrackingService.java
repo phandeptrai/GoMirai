@@ -19,7 +19,13 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+import com.gomirai.tracking.client.DriverServiceClient;
 
 /**
  * Service theo dõi vị trí tài xế theo thời gian thực.
@@ -47,6 +53,7 @@ public class TrackingService {
 
     private final RedisTemplate<String, String> redisTemplate;
     private final ObjectMapper objectMapper;
+    private final DriverServiceClient driverServiceClient;
 
     private static final String GEO_KEY = "drivers:geo";
     private static final String STATE_KEY_PREFIX = "drivers:state:";
@@ -107,12 +114,10 @@ public class TrackingService {
         try {
             List<DriverLocationResponse> drivers = new ArrayList<>();
             double currentRadius = request.getRadius();
-            int maxAttempts = 3; // Try expanding radius up to 3 times
+            int maxAttempts = 3;
             double expansionFactor = 2.0;
-            List<String> expiredDriverIds = new ArrayList<>(); // Track expired drivers to clean up
 
             for (int i = 0; i < maxAttempts; i++) {
-                // 1. Search in Redis Geo
                 Circle circle = new Circle(
                         new Point(request.getLongitude(), request.getLatitude()),
                         new Distance(currentRadius, RedisGeoCommands.DistanceUnit.METERS));
@@ -123,21 +128,27 @@ public class TrackingService {
                         .sortAscending()
                         .limit(request.getLimit() * 2);
 
-                GeoResults<RedisGeoCommands.GeoLocation<String>> results = redisTemplate.opsForGeo().radius(GEO_KEY,
-                        circle, args);
+                GeoResults<RedisGeoCommands.GeoLocation<String>> results =
+                        redisTemplate.opsForGeo().radius(GEO_KEY, circle, args);
 
-                if (results != null) {
-                    for (GeoResult<RedisGeoCommands.GeoLocation<String>> result : results) {
+                if (results != null && !results.getContent().isEmpty()) {
+                    // --- FIX: Batch all metadata fetches with one MGET call ---
+                    List<GeoResult<RedisGeoCommands.GeoLocation<String>>> resultList = results.getContent();
+                    List<String> stateKeys = resultList.stream()
+                            .map(r -> STATE_KEY_PREFIX + r.getContent().getName())
+                            .collect(Collectors.toList());
+
+                    List<String> stateValues = redisTemplate.opsForValue().multiGet(stateKeys);
+
+                    List<String> expiredDriverIds = new ArrayList<>();
+                    for (int j = 0; j < resultList.size(); j++) {
+                        GeoResult<RedisGeoCommands.GeoLocation<String>> result = resultList.get(j);
                         String driverId = result.getContent().getName();
-                        String stateKey = STATE_KEY_PREFIX + driverId;
-                        String stateJson = redisTemplate.opsForValue().get(stateKey);
+                        String stateJson = (stateValues != null) ? stateValues.get(j) : null;
 
                         if (stateJson != null) {
-                            // Metadata exists (not expired)
                             try {
                                 DriverGeoState state = objectMapper.readValue(stateJson, DriverGeoState.class);
-
-                                // Filter Logic
                                 boolean statusMatch = request.getStatus() == null
                                         || request.getStatus() == state.getStatus();
                                 boolean typeMatch = request.getVehicleType() == null
@@ -158,32 +169,31 @@ public class TrackingService {
                                 log.warn("Failed to parse state for driver: {}", driverId, e);
                             }
                         } else {
-                            // Metadata expired (TTL = 5 minutes) - mark for cleanup
                             expiredDriverIds.add(driverId);
                         }
+                    }
 
-                        if (drivers.size() >= request.getLimit()) {
-                            // Clean up expired Geo Points before returning
-                            cleanupExpiredGeoPoints(expiredDriverIds);
-                            return drivers; // Found enough drivers
-                        }
+                    // Cleanup expired once, after processing all results
+                    cleanupExpiredGeoPoints(expiredDriverIds);
+
+                    if (drivers.size() >= request.getLimit()) {
+                        return drivers.subList(0, request.getLimit());
                     }
                 }
 
                 if (!drivers.isEmpty()) {
-                    // Clean up expired Geo Points before returning
-                    cleanupExpiredGeoPoints(expiredDriverIds);
-                    return drivers; // Found some drivers, return them
+                    // --- ENRICH: If requested, fetch full details from DriverService in one bulk call ---
+                    if (request.isEnrichDetails() && !drivers.isEmpty()) {
+                        enrichWithDriverProfile(drivers);
+                    }
+                    return drivers;
                 }
 
-                // No drivers found, expand radius
                 currentRadius *= expansionFactor;
-                log.info("No drivers found within {}m, expanding radius to {}m", currentRadius / expansionFactor,
-                        currentRadius);
+                log.debug("No drivers found within {}m, expanding radius to {}m",
+                        currentRadius / expansionFactor, currentRadius);
             }
 
-            // Clean up expired Geo Points before returning
-            cleanupExpiredGeoPoints(expiredDriverIds);
             return drivers;
         } catch (RedisConnectionFailureException e) {
             log.error("Redis connection failed when searching nearby drivers", e);
@@ -213,18 +223,19 @@ public class TrackingService {
     }
 
     /**
-     * Clean up expired Geo Points from Redis Geo Set.
-     * Called when metadata has expired (TTL = 5 minutes) to prevent memory leak.
+     * Clean up expired Geo Points from Redis Geo Set (bulk version).
+     * Called after MGET scan when metadata has expired (TTL = 5 minutes).
+     * Uses a single remove() call for all expired drivers instead of N individual calls.
      */
     private void cleanupExpiredGeoPoints(List<String> driverIds) {
         if (driverIds.isEmpty()) {
             return;
         }
-
         try {
-            for (String driverId : driverIds) {
-                redisTemplate.opsForGeo().remove(GEO_KEY, driverId);
-            }
+            // FIX: Bulk remove in ONE call.
+            // Redis Geo Set is a Sorted Set — ZREM is equivalent to GeoOperations.remove().
+            // ZSetOperations.remove(K, Object...) has clear Object[] overload.
+            redisTemplate.opsForZSet().remove(GEO_KEY, driverIds.toArray());
             log.debug("Cleaned up {} expired Geo Points from Redis", driverIds.size());
         } catch (Exception e) {
             log.warn("Failed to cleanup expired Geo Points", e);
@@ -243,35 +254,73 @@ public class TrackingService {
      */
     public void cleanupExpiredGeoPointsScheduled() {
         try {
-            // Redis Geo Set is implemented as Sorted Set, so we use ZRANGE to get all
-            // members
-            // Get all members from the sorted set (0 to -1 means all members)
             var members = redisTemplate.opsForZSet().range(GEO_KEY, 0, -1);
             if (members == null || members.isEmpty()) {
                 return;
             }
 
-            int cleanedCount = 0;
-            for (String driverId : members) {
-                String stateKey = STATE_KEY_PREFIX + driverId;
+            List<String> memberList = new ArrayList<>(members);
 
-                // Check if metadata exists (if not, it means TTL expired)
-                String stateJson = redisTemplate.opsForValue().get(stateKey);
-                if (stateJson == null) {
-                    // Metadata expired → remove Geo Point
-                    redisTemplate.opsForGeo().remove(GEO_KEY, driverId);
-                    cleanedCount++;
-                    log.debug("Removed expired Geo Point for driver: {}", driverId);
+            // --- FIX: Batch all metadata checks with one MGET call ---
+            List<String> stateKeys = memberList.stream()
+                    .map(id -> STATE_KEY_PREFIX + id)
+                    .collect(Collectors.toList());
+            List<String> stateValues = redisTemplate.opsForValue().multiGet(stateKeys);
+
+            List<String> expiredDriverIds = new ArrayList<>();
+            for (int i = 0; i < memberList.size(); i++) {
+                if (stateValues == null || stateValues.get(i) == null) {
+                    expiredDriverIds.add(memberList.get(i));
                 }
             }
 
-            if (cleanedCount > 0) {
-                log.info("Scheduled cleanup: Removed {} expired Geo Points from Redis", cleanedCount);
+            if (!expiredDriverIds.isEmpty()) {
+                // Bulk remove: ZSetOperations.remove(K, Object...) accepts Object[]
+                // ZSet is the underlying structure for Redis Geo Set — equivalent to GeoOperations.remove()
+                redisTemplate.opsForZSet().remove(GEO_KEY, expiredDriverIds.toArray());
+                log.info("Scheduled cleanup: Removed {} expired Geo Points from Redis", expiredDriverIds.size());
             }
         } catch (RedisConnectionFailureException e) {
             log.error("Redis connection failed during scheduled cleanup", e);
         } catch (Exception e) {
             log.error("Failed to run scheduled cleanup for expired Geo Points", e);
+        }
+    }
+
+    private void enrichWithDriverProfile(List<DriverLocationResponse> drivers) {
+        try {
+            List<UUID> driverIds = drivers.stream()
+                    .map(d -> UUID.fromString(d.getDriverId()))
+                    .collect(Collectors.toList());
+
+            // Bulk call to DriverService
+            List<Object> profiles = driverServiceClient.getProfilesByDriverIds(driverIds);
+
+            if (profiles != null && !profiles.isEmpty()) {
+                // Map by ID for fast lookup. DriverProfileResponse contains "driverId"
+                Map<String, Object> profileMap = profiles.stream()
+                        .collect(Collectors.toMap(
+                                p -> {
+                                    // Use Jackson to extract driverId property as String
+                                    try {
+                                        return objectMapper.convertValue(p, Map.class).get("driverId").toString();
+                                    } catch (Exception e) {
+                                        return "";
+                                    }
+                                },
+                                Function.identity(),
+                                (existing, replacement) -> existing));
+
+                drivers.forEach(d -> {
+                    Object profile = profileMap.get(d.getDriverId());
+                    if (profile != null) {
+                        d.setDetails(profile);
+                    }
+                });
+            }
+        } catch (Exception e) {
+            log.warn("Failed to enrich driver locations with profiles: {}", e.getMessage());
+            // Fail gracefully - search results are still valid without enrichment
         }
     }
 }

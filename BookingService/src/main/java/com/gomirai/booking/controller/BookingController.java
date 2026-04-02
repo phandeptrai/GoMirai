@@ -207,7 +207,7 @@ public class BookingController {
      */
     @GetMapping("/{bookingId}/info")
     public ResponseEntity<ApiResponse<BookingResponse>> getBookingInfo(@PathVariable UUID bookingId) {
-        BookingResponse response = bookingService.getBooking(bookingId);
+        BookingResponse response = bookingService.getBookingInternal(bookingId);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
 }

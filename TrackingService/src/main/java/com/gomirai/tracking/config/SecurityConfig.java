@@ -1,5 +1,7 @@
 package com.gomirai.tracking.config;
 
+import com.gomirai.common.security.GatewayDelegationAuthenticationFilter;
+import com.gomirai.common.security.InternalApiKeyFilter;
 import com.gomirai.common.security.JwtAuthenticationEntryPoint;
 import com.gomirai.common.security.JwtAuthenticationFilter;
 import org.springframework.beans.factory.annotation.Value;
@@ -43,9 +45,22 @@ public class SecurityConfig {
     @Value("${cors.max.age}")
     private long maxAge;
 
+    @Value("${security.internal.api-key}")
+    private String internalApiKey;
+
     public SecurityConfig(JwtAuthenticationFilter jwtFilter, JwtAuthenticationEntryPoint authEntryPoint) {
         this.jwtFilter = jwtFilter;
         this.authEntryPoint = authEntryPoint;
+    }
+
+    @Bean
+    public GatewayDelegationAuthenticationFilter gatewayDelegationAuthenticationFilter() {
+        return new GatewayDelegationAuthenticationFilter(internalApiKey);
+    }
+
+    @Bean
+    public InternalApiKeyFilter internalApiKeyFilter() {
+        return new InternalApiKeyFilter(internalApiKey);
     }
 
     @Bean
@@ -59,7 +74,9 @@ public class SecurityConfig {
                 .requestMatchers("/actuator/health").permitAll()
                 .anyRequest().authenticated()
             )
-            .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
+            .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
+            .addFilterBefore(gatewayDelegationAuthenticationFilter(), JwtAuthenticationFilter.class)
+            .addFilterBefore(internalApiKeyFilter(), GatewayDelegationAuthenticationFilter.class);
 
         return http.build();
     }

@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/api/notifications/device-tokens")
+@RequestMapping("/api/notification/device-tokens")
 public class DeviceTokenController {
 
     private final DeviceTokenService service;

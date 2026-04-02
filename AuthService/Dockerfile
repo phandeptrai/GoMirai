@@ -1,23 +1,26 @@
-# Multi-stage build with common-lib support
+# syntax=docker/dockerfile:1
+# 🚀 Docker BuildKit Optimized Build
 FROM eclipse-temurin:21-jdk-alpine AS build
 WORKDIR /workspace
 
-# Copy common lib first and build it
+# Install Maven only once
+RUN apk add --no-cache maven
+
+# 1. Build common-lib with cache
 COPY gomirai-common-lib ./gomirai-common-lib
 WORKDIR /workspace/gomirai-common-lib
-RUN apk add --no-cache maven && mvn clean install -DskipTests
+RUN --mount=type=cache,target=/root/.m2 mvn clean install -DskipTests
 
-# Now build AuthService
+# 2. Build Service with cache
 WORKDIR /workspace/AuthService
+# Copy POM first to leverage dependency caching
 COPY AuthService/pom.xml .
-COPY AuthService/mvnw .
-COPY AuthService/.mvn ./.mvn
+RUN --mount=type=cache,target=/root/.m2 mvn dependency:go-offline -B
 
-# Copy source and build
 COPY AuthService/src ./src
-RUN ./mvnw clean package -DskipTests
+RUN --mount=type=cache,target=/root/.m2 mvn clean package -DskipTests
 
-# Runtime stage
+# 3. Runtime stage (Slim)
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 RUN addgroup -S spring && adduser -S spring -G spring

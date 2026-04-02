@@ -48,6 +48,11 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.geo.Point;
+import org.springframework.data.geo.Distance;
+import org.springframework.data.geo.Metrics;
 
 /**
  * Service xử lý logic đặt xe.
@@ -81,6 +86,7 @@ public class BookingService {
     private final PaymentServiceClient paymentServiceClient;
     private final TrackingServiceClient trackingServiceClient;
     private final BookingEventsProducer eventsProducer;
+    private final BookingPersistenceService bookingPersistenceService;
     private final SecurityUtils securityUtils;
     // WebSocket removed - now handled by NotificationService
 
@@ -97,22 +103,23 @@ public class BookingService {
     private double driverNearbyRadiusKm;
 
     /**
-     * Create booking with Saga pattern:
-     * 1. Validate input
-     * 2. Normalize location
-     * 3. Call Map Service (sync) - with error handling
-     * 4. Call Pricing Service (sync) - with error handling
-     * 5. Persist booking draft
-     * 6. Publish driver search event
+     * Create booking:
+     * <ul>
+     * <li>Pre-processing (no {@code @Transactional}): validate, Map, Pricing,
+     * Wallet payment — minimizes time
+     * holding DB resources.</li>
+     * <li>Persistence: short transactional
+     * {@link BookingPersistenceService#saveBookingAndScheduleDriverSearch}
+     * only around Mongo save.</li>
+     * <li>Post-processing: Kafka driver-search published after commit (see
+     * persistence service).</li>
+     * </ul>
      */
-    @Transactional
     public BookingResponse createBooking(CreateBookingRequest request) {
         UUID customerId = securityUtils.getCurrentUserId();
 
-        // Step 1: Validate input
         validateBookingRequest(request);
 
-        // Step 2: Check idempotency
         if (request.getIdempotencyKey() != null) {
             bookingRepository.findByIdempotencyKey(request.getIdempotencyKey())
                     .ifPresent(booking -> {
@@ -121,7 +128,6 @@ public class BookingService {
                     });
         }
 
-        // Step 3: Normalize location (already in AddressSnapshot format)
         AddressSnapshot pickupLocation = normalizeLocation(request.getPickupLocation());
         AddressSnapshot dropoffLocation = normalizeLocation(request.getDropoffLocation());
 
@@ -139,17 +145,61 @@ public class BookingService {
         booking.setCreatedAt(LocalDateTime.now());
         booking.setUpdatedAt(LocalDateTime.now());
 
+        booking.setCreatedAt(LocalDateTime.now());
+        booking.setUpdatedAt(LocalDateTime.now());
+
+        // Saga Pattern (Async): Initial status based on payment method
+        if (request.getPaymentMethod() == com.gomirai.booking.enums.PaymentMethod.WALLET) {
+            booking.setStatus(BookingStatus.PENDING_PAYMENT);
+        } else {
+            booking.setStatus(BookingStatus.CREATED);
+        }
+
+        // Save booking first (Atomic Persistence)
+        Booking savedBooking = bookingPersistenceService.saveBookingOnly(booking);
+
+        // Publish event to start async enrichment/payment pipeline
+        com.gomirai.common.dto.event.BookingCreatedEvent createdEvent = new com.gomirai.common.dto.event.BookingCreatedEvent(
+                savedBooking.getBookingId(),
+                savedBooking.getCustomerId(),
+                null, // Amount not yet calculated
+                "VND",
+                savedBooking.getPaymentMethod().name(),
+                savedBooking.getVehicleType().name(),
+                savedBooking.getPickupLocation().getLatitude(),
+                savedBooking.getPickupLocation().getLongitude(),
+                savedBooking.getDropoffLocation().getLatitude(),
+                savedBooking.getDropoffLocation().getLongitude());
+
+        eventsProducer.publishBookingCreatedEvent(createdEvent);
+
+        log.info("ASYNC SAGA STARTED: bookingId={}, status={}, customerId={}",
+                savedBooking.getBookingId(), savedBooking.getStatus(), customerId);
+
+        return toResponse(savedBooking);
+    }
+
+    /**
+     * BACKGROUND ENRICHMENT: Called by Kafka Saga Consumer
+     * Performs Map/Pricing calls asynchronously and finally sets status to PENDING
+     */
+    @Transactional
+    public void enrichAndReadyBooking(Booking booking) {
+        log.info("ENRICHING bookingId={}...", booking.getBookingId());
+
         try {
-            // Step 4: Call Map Service (sync) - Saga Step 1
-            MapServiceRouteResponse routeResponse = callMapService(pickupLocation, dropoffLocation);
-            booking.setEstimatedDistanceKm(routeResponse.getDistance() / 1000.0); // Convert meters to km
-            booking.setEstimatedDurationMinutes(routeResponse.getDuration() / 60); // Convert seconds to minutes
+            // STEP 1: Map Service (Background)
+            MapServiceRouteResponse routeResponse = callMapService(
+                    booking.getPickupLocation(),
+                    booking.getDropoffLocation());
+
+            booking.setEstimatedDistanceKm(routeResponse.getDistance() / 1000.0);
+            booking.setEstimatedDurationMinutes(routeResponse.getDuration() / 60);
             booking.setRoutePolyline(routeResponse.getPolyline());
 
-            // Step 5: Call Pricing Service (sync) - Saga Step 2
-            // Convert VehicleType enum to PricingService format
-            String vehicleTypeForPricing = convertVehicleTypeForPricing(request.getVehicleType());
-            String region = extractRegionFromLocation(pickupLocation); // Extract region from coordinates
+            // STEP 2: Pricing Service (Background)
+            String vehicleTypeForPricing = convertVehicleTypeForPricing(booking.getVehicleType());
+            String region = extractRegionFromLocation(booking.getPickupLocation());
 
             PricingServiceResponse pricingResponse = callPricingService(
                     vehicleTypeForPricing,
@@ -157,9 +207,8 @@ public class BookingService {
                     booking.getEstimatedDurationMinutes(),
                     region);
 
-            // Step 6: Create price snapshot
             BookingPriceSnapshot priceSnapshot = new BookingPriceSnapshot();
-            priceSnapshot.setBaseFare((double) pricingResponse.getEstimatedFare() * 0.4); // Estimate breakdown
+            priceSnapshot.setBaseFare((double) pricingResponse.getEstimatedFare() * 0.4);
             priceSnapshot.setDistanceFare((double) pricingResponse.getEstimatedFare() * 0.5);
             priceSnapshot.setTimeFare((double) pricingResponse.getEstimatedFare() * 0.1);
             priceSnapshot.setSurgeMultiplier(1.0);
@@ -172,55 +221,26 @@ public class BookingService {
 
             booking.setPrice(priceSnapshot);
 
-            // Step 6.5: Process payment if paymentMethod = WALLET
-            if (request.getPaymentMethod() == com.gomirai.booking.enums.PaymentMethod.WALLET) {
-                try {
-                    RidePaymentRequest paymentRequest = new RidePaymentRequest(
-                            customerId,
-                            booking.getBookingId(),
-                            BigDecimal.valueOf(priceSnapshot.getFinalAmount()));
+            // STEP 3: ACTIVATE! Change status from CONFIRMED to PENDING (for drivers to
+            // see)
+            BookingStatus oldStatus = booking.getStatus();
+            booking.setStatus(BookingStatus.PENDING);
+            booking.setUpdatedAt(LocalDateTime.now());
 
-                    TransactionResponse paymentResponse = paymentServiceClient.payRide(paymentRequest);
+            // Build driver search event (POST-ENRICHMENT)
+            BookingSearchDriversEvent searchEvent = buildDriverSearchEvent(booking);
 
-                    if (!"SUCCESS".equals(paymentResponse.getStatus())) {
-                        throw new BusinessException("PAYMENT_FAILED: Unable to process wallet payment");
-                    }
+            // Save and Trigger Tracking Service via persistence layer
+            bookingPersistenceService.saveBookingAndScheduleDriverSearch(booking, searchEvent);
 
-                    log.info("Wallet payment successful for bookingId={}, transactionId={}",
-                            booking.getBookingId(), paymentResponse.getTransactionId());
+            log.info("✓ ENRICHMENT SUCCESSFUL: bookingId={} is now PENDING", booking.getBookingId());
 
-                } catch (BusinessException e) {
-                    // Re-throw BusinessException from PaymentServiceClient with specific error
-                    // codes
-                    log.error("Payment failed for bookingId={}: {}", booking.getBookingId(), e.getMessage());
-                    throw e;
-                } catch (Exception e) {
-                    log.error("Unexpected payment error for bookingId={}", booking.getBookingId(), e);
-                    throw new BusinessException(
-                            "PAYMENT_UNAVAILABLE: Unable to process wallet payment. Please try again.");
-                }
-            }
+            // Notify UI status change from CONFIRMED -> PENDING
+            publishStatusChange(booking, oldStatus);
 
-            // Step 7: Persist booking draft
-            Booking savedBooking = bookingRepository.save(booking);
-
-            // Step 8: Publish driver search event (async)
-            publishDriverSearchEvent(savedBooking);
-
-            log.info("Created booking: bookingId={}, customerId={}, status={}",
-                    savedBooking.getBookingId(), customerId, savedBooking.getStatus());
-
-            // Step 9: Broadcast via WebSocket for real-time updates
-            // WebSocket removed - NotificationService handles realtime via Kafka
-            BookingResponse response = toResponse(savedBooking);
-            // webSocketService.notifyCustomer(customerId, response);
-
-            return response;
-
-        } catch (BusinessException e) {
-            // Saga compensation: If Map or Pricing service fails, booking is not persisted
-            // Just throw the exception to client
-            log.error("Failed to create booking: {}", e.getMessage());
+        } catch (Exception e) {
+            log.error("✗ ENRICHMENT FAILED for bookingId={}: {}", booking.getBookingId(), e.getMessage());
+            // Retry logic or fail booking
             throw e;
         }
     }
@@ -265,41 +285,25 @@ public class BookingService {
     }
 
     /**
-     * Publish driver search event to Kafka
-     * Include all booking details to avoid extra API calls in TrackingService
+     * Builds Kafka payload for Tracking (published after DB commit).
      */
-    private void publishDriverSearchEvent(Booking booking) {
-        try {
-            log.info("Publishing driver search event for bookingId={}", booking.getBookingId());
-
-            BookingSearchDriversEvent event = new BookingSearchDriversEvent(
-                    booking.getBookingId(),
-                    booking.getPickupLocation() != null ? booking.getPickupLocation().getLatitude() : null,
-                    booking.getPickupLocation() != null ? booking.getPickupLocation().getLongitude() : null,
-                    booking.getDropoffLocation() != null ? booking.getDropoffLocation().getLatitude() : null,
-                    booking.getDropoffLocation() != null ? booking.getDropoffLocation().getLongitude() : null,
-                    booking.getVehicleType() != null ? booking.getVehicleType().name() : null,
-                    driverSearchRadiusMeters,
-                    booking.getPickupLocation() != null ? booking.getPickupLocation().getFullAddress() : null,
-                    booking.getDropoffLocation() != null ? booking.getDropoffLocation().getFullAddress() : null,
-                    booking.getEstimatedDistanceKm(),
-                    booking.getEstimatedDurationMinutes(),
-                    booking.getPrice() != null ? booking.getPrice().getFinalAmount() : null,
-                    booking.getPrice() != null && booking.getPrice().getCurrency() != null
-                            ? booking.getPrice().getCurrency()
-                            : "VND");
-
-            log.info("Event created: bookingId={}, fare={}, pickup={}, dropoff={}",
-                    event.getBookingId(), event.getEstimatedFare(),
-                    event.getPickupAddress(), event.getDropoffAddress());
-
-            eventsProducer.publishSearchDriversEvent(event);
-            log.info("✓ Successfully published driver search event for bookingId={}", booking.getBookingId());
-        } catch (Exception e) {
-            log.error("✗ Failed to publish driver search event for bookingId={}", booking.getBookingId(), e);
-            e.printStackTrace();
-            // Don't throw - booking is already saved, just log the error
-        }
+    private BookingSearchDriversEvent buildDriverSearchEvent(Booking booking) {
+        return new BookingSearchDriversEvent(
+                booking.getBookingId(),
+                booking.getPickupLocation() != null ? booking.getPickupLocation().getLatitude() : null,
+                booking.getPickupLocation() != null ? booking.getPickupLocation().getLongitude() : null,
+                booking.getDropoffLocation() != null ? booking.getDropoffLocation().getLatitude() : null,
+                booking.getDropoffLocation() != null ? booking.getDropoffLocation().getLongitude() : null,
+                booking.getVehicleType() != null ? booking.getVehicleType().name() : null,
+                driverSearchRadiusMeters,
+                booking.getPickupLocation() != null ? booking.getPickupLocation().getFullAddress() : null,
+                booking.getDropoffLocation() != null ? booking.getDropoffLocation().getFullAddress() : null,
+                booking.getEstimatedDistanceKm(),
+                booking.getEstimatedDurationMinutes(),
+                booking.getPrice() != null ? booking.getPrice().getFinalAmount() : null,
+                booking.getPrice() != null && booking.getPrice().getCurrency() != null
+                        ? booking.getPrice().getCurrency()
+                        : "VND");
     }
 
     /**
@@ -559,7 +563,7 @@ public class BookingService {
         // Validate ownership
         UUID currentUserId = securityUtils.getCurrentUserId();
         if (!booking.getCustomerId().equals(currentUserId)) {
-            throw new BusinessException("FORBIDDEN: Only customer can cancel booking");
+            throw new com.gomirai.common.exception.ForbiddenException("FORBIDDEN: Only customer can cancel booking");
         }
 
         if (!booking.canBeCanceled()) {
@@ -669,8 +673,18 @@ public class BookingService {
         UUID currentUserId = securityUtils.getCurrentUserId();
         if (!booking.getCustomerId().equals(currentUserId) &&
                 (booking.getDriverId() == null || !booking.getDriverId().equals(currentUserId))) {
-            throw new BusinessException("FORBIDDEN: You don't have permission to view this booking");
+            throw new com.gomirai.common.exception.ForbiddenException("FORBIDDEN: You don't have permission to view this booking");
         }
+
+        return toResponse(booking);
+    }
+
+    /**
+     * Get booking by ID (Internal - No Auth Check)
+     */
+    public BookingResponse getBookingInternal(UUID bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new NotFoundException("Booking not found: " + bookingId));
 
         return toResponse(booking);
     }
@@ -716,6 +730,23 @@ public class BookingService {
      * 2. Driver's vehicle type
      * 3. Booking creation time (recent bookings only)
      */
+    /**
+     * PERF IMPROVEMENT #2 — Replaced O(N) Haversine Java loop with MongoDB 2dsphere geo-spatial query.
+     *
+     * <p><b>Before:</b> Fetch up to 50 PENDING bookings, compute Haversine in JVM, sort in memory.  
+     * CPU-bound, scales badly as pending bookings grow.
+     *
+     * <p><b>After:</b> MongoDB {@code $nearSphere} backed by the 2dsphere index on
+     * {@code pickupLocation.point} returns only bookings within the driver's radius,
+     * sorted by distance, directly from the DB engine — O(log N) index seek.
+     * Vehicle-type and recency filters are pushed to the DB query as well, so no
+     * post-processing is needed in Java.
+     *
+     * <p><b>Fallback:</b> If {@code pickupLocation.point} is null on older bookings
+     * (created before the geo-field was added), those documents will be ignored by
+     * the $nearSphere query — they would have been excluded anyway since they cannot
+     * be matched geographically.
+     */
     public List<BookingResponse> getPendingBookingsForDriver() {
         UUID driverId = securityUtils.getCurrentUserId();
 
@@ -723,99 +754,47 @@ public class BookingService {
         DriverGeoStateResponse driverLocation = trackingServiceClient.getDriverLocation(driverId);
         if (driverLocation == null || driverLocation.getLatitude() == null || driverLocation.getLongitude() == null) {
             log.warn("Driver location not found for driverId: {}", driverId);
-            return List.of(); // Return empty list if driver location not available
+            return List.of();
         }
 
         double driverLat = driverLocation.getLatitude();
         double driverLng = driverLocation.getLongitude();
+
+        // 2. Build $nearSphere query — MongoDB returns docs sorted by ascending distance
+        //    GeoJSON convention: Point(longitude, latitude)
+        Point driverPoint = new Point(driverLng, driverLat);
+        Distance radius = new Distance(driverNearbyRadiusKm, Metrics.KILOMETERS);
+
+        LocalDateTime thirtyMinutesAgo = LocalDateTime.now().minusMinutes(30);
+
+        Criteria geoCriteria = Criteria.where("pickupLocation.point")
+                .nearSphere(driverPoint)
+                .maxDistance(radius.getNormalizedValue()); // normalized = radians for 2dsphere
+
+        Criteria statusCriteria = Criteria.where("status").is(BookingStatus.PENDING);
+        Criteria recencyCriteria = Criteria.where("createdAt").gte(thirtyMinutesAgo);
+
+        Criteria combined = new Criteria().andOperator(statusCriteria, recencyCriteria, geoCriteria);
+
+        // Vehicle type filter — push to DB if driver has a known vehicle type
         String driverVehicleType = driverLocation.getVehicleType() != null
                 ? driverLocation.getVehicleType().name()
                 : null;
+        if (driverVehicleType != null) {
+            Criteria vehicleCriteria = Criteria.where("vehicleType").is(driverVehicleType);
+            combined = new Criteria().andOperator(statusCriteria, recencyCriteria, vehicleCriteria, geoCriteria);
+        }
 
-        // 2. Get all PENDING bookings (limit to recent bookings)
-        Pageable pageable = PageRequest.of(0, 50); // Get more bookings to filter
-        Page<Booking> allPendingBookings = bookingRepository.findByStatusOrderByCreatedAtDesc(
-                BookingStatus.PENDING, pageable);
+        Query geoQuery = new Query(combined).limit(20);
 
-        log.info("Found {} total PENDING bookings in database", allPendingBookings.getContent().size());
+        List<Booking> nearbyBookings = mongoTemplate.find(geoQuery, Booking.class);
 
-        // 3. Filter bookings by:
-        // - Distance from driver (within 5km)
-        // - Vehicle type match
-        // - Recent bookings (within last 30 minutes)
-        LocalDateTime thirtyMinutesAgo = LocalDateTime.now().minusMinutes(30);
-
-        List<BookingResponse> nearbyBookings = allPendingBookings.getContent().stream()
-                .filter(booking -> {
-                    // Filter by vehicle type
-                    if (driverVehicleType != null && booking.getVehicleType() != null) {
-                        if (!booking.getVehicleType().name().equals(driverVehicleType)) {
-                            return false;
-                        }
-                    }
-
-                    // Filter by creation time (recent bookings only)
-                    if (booking.getCreatedAt() != null && booking.getCreatedAt().isBefore(thirtyMinutesAgo)) {
-                        return false;
-                    }
-
-                    // Filter by distance (within 5km)
-                    if (booking.getPickupLocation() != null
-                            && booking.getPickupLocation().getLatitude() != null
-                            && booking.getPickupLocation().getLongitude() != null) {
-
-                        double bookingLat = booking.getPickupLocation().getLatitude();
-                        double bookingLng = booking.getPickupLocation().getLongitude();
-                        double distanceKm = calculateHaversineDistance(
-                                driverLat, driverLng,
-                                bookingLat, bookingLng);
-
-                        return distanceKm <= driverNearbyRadiusKm;
-                    }
-
-                    return false;
-                })
-                .map(this::toResponse)
-                .sorted((b1, b2) -> {
-                    // Sort by distance (nearest first)
-                    double dist1 = calculateHaversineDistance(
-                            driverLat, driverLng,
-                            b1.getPickupLocation().getLatitude(),
-                            b1.getPickupLocation().getLongitude());
-                    double dist2 = calculateHaversineDistance(
-                            driverLat, driverLng,
-                            b2.getPickupLocation().getLatitude(),
-                            b2.getPickupLocation().getLongitude());
-                    return Double.compare(dist1, dist2);
-                })
-                .limit(20) // Limit to 20 nearest bookings
-                .collect(java.util.stream.Collectors.toList());
-
-        log.debug("Found {} nearby bookings for driver {} within {}km",
+        log.debug("Found {} nearby bookings for driver {} within {}km (geo-spatial query)",
                 nearbyBookings.size(), driverId, driverNearbyRadiusKm);
 
-        return nearbyBookings;
-    }
-
-    /**
-     * Calculate distance between two coordinates using Haversine formula
-     * Returns distance in kilometers
-     */
-    private double calculateHaversineDistance(double lat1, double lon1, double lat2, double lon2) {
-        final int EARTH_RADIUS_KM = 6371;
-
-        double lat1Rad = Math.toRadians(lat1);
-        double lat2Rad = Math.toRadians(lat2);
-        double deltaLatRad = Math.toRadians(lat2 - lat1);
-        double deltaLonRad = Math.toRadians(lon2 - lon1);
-
-        double a = Math.sin(deltaLatRad / 2) * Math.sin(deltaLatRad / 2)
-                + Math.cos(lat1Rad) * Math.cos(lat2Rad)
-                        * Math.sin(deltaLonRad / 2) * Math.sin(deltaLonRad / 2);
-
-        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-        return EARTH_RADIUS_KM * c;
+        return nearbyBookings.stream()
+                .map(this::toResponse)
+                .collect(java.util.stream.Collectors.toList());
     }
 
     // Helper methods
@@ -878,11 +857,13 @@ public class BookingService {
     }
 
     private AddressSnapshot normalizeLocation(AddressSnapshot location) {
-        // Basic normalization - could add more logic here
+        // Basic normalization
         if (location.getFullAddress() == null || location.getFullAddress().trim().isEmpty()) {
             location.setFullAddress(String.format("%.6f, %.6f",
                     location.getLatitude(), location.getLongitude()));
         }
+        // PERF #2: Keep GeoJsonPoint in sync so the 2dsphere index can be used
+        location.syncPoint();
         return location;
     }
 
@@ -916,7 +897,7 @@ public class BookingService {
     /**
      * Helper to publish status change event for WebSocket updates
      */
-    private void publishStatusChange(Booking booking, BookingStatus previousStatus) {
+    public void publishStatusChange(Booking booking, BookingStatus previousStatus) {
         try {
             BookingStatusChangedEvent event = BookingStatusChangedEvent.builder()
                     .bookingId(booking.getBookingId())

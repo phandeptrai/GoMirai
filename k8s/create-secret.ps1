@@ -1,5 +1,7 @@
 # =============================================================================
 # GoMirai - Tao K8s Secret tu .env (Version Sửa Lỗi)
+# Redis tren GKE: trong .env dat SPRING_REDIS_URL=redis://redis-service:6379
+# (sau khi apply infrastructure.yaml — Service redis-service).
 # =============================================================================
 $NAMESPACE = "gomirai"
 $SCRIPT_PATH = Split-Path -Parent $MyInvocation.MyCommand.Definition
@@ -36,14 +38,23 @@ $secrets["BOOKING_MONGODB_URI"]     = $envVars["BOOKING_MONGODB_URI"]
 $secrets["NOTIFICATION_MONGODB_URI"]= $envVars["NOTIFICATION_MONGODB_URI"]
 $secrets["REVIEW_MONGODB_URI"]      = $envVars["REVIEW_MONGODB_URI"]
 $secrets["SPRING_REDIS_URL"]        = $envVars["SPRING_REDIS_URL"]
-
-if ($envVars["SPRING_REDIS_URL"] -match "redis://([^:]+):([^@]+)@([^:]+):(\d+)") {
+$rUrl = $envVars["SPRING_REDIS_URL"]
+# Có auth: redis://user:pass@host:port
+if ($rUrl -match "redis://([^:]+):([^@]+)@([^:]+):(\d+)") {
     $secrets["SPRING_REDIS_USERNAME"] = $matches[1]
     $secrets["SPRING_REDIS_PASSWORD"] = $matches[2]
     $secrets["SPRING_REDIS_HOST"]     = $matches[3]
     $secrets["SPRING_REDIS_PORT"]     = $matches[4]
 }
+# Không auth (Docker / in-cluster): redis://redis-service:6379 hoặc redis://host:6379/0
+elseif ($rUrl -match "^redis://([^:@/]+):(\d+)(?:/|$)") {
+    $secrets["SPRING_REDIS_HOST"]     = $matches[1]
+    $secrets["SPRING_REDIS_PORT"]     = $matches[2]
+    $secrets["SPRING_REDIS_USERNAME"] = ""
+    $secrets["SPRING_REDIS_PASSWORD"] = ""
+}
 $secrets["SPRING_REDIS_SSL_ENABLED"] = "false"
+$secrets["INTERNAL_API_KEY"]        = $envVars["INTERNAL_API_KEY"]
 $secrets["GOOGLE_CLIENT_ID"]         = $envVars["GOOGLE_CLIENT_ID"]
 $secrets["GOOGLE_CLIENT_SECRET"]     = $envVars["GOOGLE_CLIENT_SECRET"]
 $secrets["VNPAY_TMN_CODE"]           = $envVars["VNPAY_TMN_CODE"]

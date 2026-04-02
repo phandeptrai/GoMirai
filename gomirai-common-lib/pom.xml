@@ -7,7 +7,7 @@
 
     <groupId>com.gomirai</groupId>
     <artifactId>gomirai-common-lib</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.4</version>
     <packaging>jar</packaging>
 
     <name>GoMirai Common Library</name>

@@ -11,13 +11,13 @@ import java.util.UUID;
  * Feign Client để gọi UserService.
  * Thay thế RestTemplate thủ công trước đây.
  */
-@FeignClient(name = "UserService")
+@FeignClient(name = "user-service")
 public interface UserServiceClient {
 
     /**
      * Lấy thông tin user profile public bằng userId.
      * Endpoint: GET /api/users/{userId}/public
      */
-    @GetMapping("/api/users/{userId}/public")
+    @GetMapping("/api/user/{userId}/public")
     UserProfileResponse getUserPublicInfo(@PathVariable("userId") UUID userId);
 }

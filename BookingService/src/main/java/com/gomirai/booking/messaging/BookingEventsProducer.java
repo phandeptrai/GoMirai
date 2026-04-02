@@ -54,6 +54,28 @@ public class BookingEventsProducer {
     @Value("${kafka.topic.refund-requested:refund.requested}")
     private String refundRequestedTopic;
 
+    @Value("${kafka.topic.booking-created:booking-created-event}")
+    private String createdTopic;
+
+    /**
+     * Publish sự kiện tạo booking mới để kích hoạt luồng Saga (Async)
+     * 
+     * Consumers:
+     * 1. MapService & PricingService: Để làm giàu dữ liệu quãng đường và giá
+     * (Async)
+     * 2. PaymentService: Để thực hiện trừ tiền ví (WALLET)
+     */
+    public void publishBookingCreatedEvent(com.gomirai.common.dto.event.BookingCreatedEvent event) {
+        try {
+            kafkaTemplate.send(createdTopic, event.getBookingId().toString(), event);
+            log.info("Published BookingCreatedEvent: bookingId={}, paymentMethod={}",
+                    event.getBookingId(), event.getPaymentMethod());
+        } catch (Exception e) {
+            log.error("Failed to publish BookingCreatedEvent for bookingId={}",
+                    event.getBookingId(), e);
+        }
+    }
+
     /**
      * Publish sự kiện thay đổi trạng thái booking
      * 

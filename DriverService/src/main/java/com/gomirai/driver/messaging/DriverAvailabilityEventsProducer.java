@@ -39,7 +39,7 @@ public class DriverAvailabilityEventsProducer {
 		try {
 			event.validate();
 			kafkaTemplate.send(topicName, event.driverId().toString(), event);
-			log.info("Published DriverAvailabilityChangedEvent: driverId={}, status={}, vehicleType={}",
+			log.debug("Published DriverAvailabilityChangedEvent: driverId={}, status={}, vehicleType={}",
 					event.driverId(), event.availabilityStatus(), event.vehicleType());
 		} catch (Exception e) {
 			log.error("Failed to publish DriverAvailabilityChangedEvent for driverId={}", event.driverId(), e);

@@ -17,7 +17,7 @@ public class NotificationProducer {
     private static final String TOPIC = "notification.events";
 
     public void send(NotificationEvent event) {
-        log.info("Publishing NotificationEvent: [ID={}] [Type={}]", event.getEventId(), event.getType());
+        log.debug("Publishing NotificationEvent: id={}, type={}", event.getEventId(), event.getType());
         kafkaTemplate.send(TOPIC, event.getEventId().toString(), event);
     }
 }

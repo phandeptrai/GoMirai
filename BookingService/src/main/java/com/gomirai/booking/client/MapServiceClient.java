@@ -31,6 +31,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 public class MapServiceClient {
 
     private final DiscoveryClient discoveryClient;
+    @org.springframework.beans.factory.annotation.Qualifier("mapServiceRestTemplate")
     private final RestTemplate restTemplate;
     private final java.util.concurrent.atomic.AtomicInteger nextInstanceIndex = new java.util.concurrent.atomic.AtomicInteger(
             0);

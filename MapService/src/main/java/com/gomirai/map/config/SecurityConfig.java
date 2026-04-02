@@ -15,6 +15,8 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import com.gomirai.common.security.GatewayDelegationAuthenticationFilter;
+import com.gomirai.common.security.InternalApiKeyFilter;
 import com.gomirai.common.security.JwtAuthenticationEntryPoint;
 import com.gomirai.common.security.JwtAuthenticationFilter;
 
@@ -44,10 +46,23 @@ public class SecurityConfig {
 	@Value("${cors.max.age}")
 	private long maxAge;
 
+	@Value("${security.internal.api-key}")
+	private String internalApiKey;
+
 	// ✅ Autowire từ Common Lib (nhờ @ComponentScan)
 	public SecurityConfig(JwtAuthenticationFilter jwtFilter, JwtAuthenticationEntryPoint authEntryPoint) {
 		this.jwtFilter = jwtFilter;
 		this.authEntryPoint = authEntryPoint;
+	}
+
+	@Bean
+	public GatewayDelegationAuthenticationFilter gatewayDelegationAuthenticationFilter() {
+		return new GatewayDelegationAuthenticationFilter(internalApiKey);
+	}
+
+	@Bean
+	public InternalApiKeyFilter internalApiKeyFilter() {
+		return new InternalApiKeyFilter(internalApiKey);
 	}
 
 	@Bean
@@ -62,7 +77,9 @@ public class SecurityConfig {
 				.requestMatchers("/api/map/directions").permitAll()       // Public directions endpoint
 				.anyRequest().authenticated()                              // Tất cả request khác cần JWT
 			)
-			.addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
+			.addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
+			.addFilterBefore(gatewayDelegationAuthenticationFilter(), JwtAuthenticationFilter.class)
+			.addFilterBefore(internalApiKeyFilter(), GatewayDelegationAuthenticationFilter.class);
 
 		http.headers(headers -> headers
 			.contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'"))

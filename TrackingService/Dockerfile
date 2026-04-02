@@ -1,31 +1,22 @@
-# Multi-stage build with common-lib support
+# syntax=docker/dockerfile:1
 FROM eclipse-temurin:21-jdk-alpine AS build
 WORKDIR /workspace
+RUN apk add --no-cache maven
 
-# 1. Copy & Build Common Lib
 COPY gomirai-common-lib ./gomirai-common-lib
 WORKDIR /workspace/gomirai-common-lib
-RUN apk add --no-cache maven && mvn clean install -DskipTests
+RUN --mount=type=cache,target=/root/.m2 mvn clean install -DskipTests
 
-# 2. Build TrackingService
 WORKDIR /workspace/TrackingService
 COPY TrackingService/pom.xml .
-COPY TrackingService/mvnw .
-COPY TrackingService/.mvn ./.mvn
-
-# 3. Copy Source & Package
+RUN --mount=type=cache,target=/root/.m2 mvn dependency:go-offline -B
 COPY TrackingService/src ./src
-RUN ./mvnw clean package -DskipTests
+RUN --mount=type=cache,target=/root/.m2 mvn clean package -DskipTests
 
-# Runtime stage
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 RUN addgroup -S spring && adduser -S spring -G spring
 USER spring:spring
 COPY --from=build /workspace/TrackingService/target/*.jar app.jar
 EXPOSE 8085
-ENTRYPOINT ["java", \
-  "-XX:+UseContainerSupport", \
-  "-XX:MaxRAMPercentage=75.0", \
-  "-XX:+ExitOnOutOfMemoryError", \
-  "-jar", "app.jar"]
+ENTRYPOINT ["java", "-jar", "app.jar"]

@@ -35,7 +35,7 @@ public class BookingSearchDriversConsumer {
             @Header(KafkaHeaders.RECEIVED_KEY) String key,
             Acknowledgment acknowledgment) {
         try {
-            log.info("Received BookingSearchDriversEvent: bookingId={}, vehicleType={}, radius={}m",
+            log.debug("Received BookingSearchDriversEvent: bookingId={}, vehicleType={}, radius={}m",
                     event.getBookingId(), event.getVehicleType(), event.getRadiusMeters());
 
             driverBookingService.handleBookingSearchDrivers(event);

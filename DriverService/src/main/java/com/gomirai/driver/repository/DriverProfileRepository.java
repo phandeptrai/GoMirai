@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
 import org.springframework.data.mongodb.repository.MongoRepository;
 
 import com.gomirai.common.enums.DriverAccountStatus;
@@ -13,7 +15,11 @@ public interface DriverProfileRepository extends MongoRepository<DriverProfile, 
 
 	Optional<DriverProfile> findByUserId(UUID userId);
 
-	List<DriverProfile> findByAccountStatus(DriverAccountStatus status);
+	Slice<DriverProfile> findByAccountStatus(DriverAccountStatus status, Pageable pageable);
+
+	Slice<DriverProfile> findAllBy(Pageable pageable);
+
+	List<DriverProfile> findAllByUserIdIn(List<UUID> userIds);
 
 	boolean existsByUserId(UUID userId);
 }

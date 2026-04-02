@@ -34,6 +34,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 public class PaymentServiceClient {
 
     private final DiscoveryClient discoveryClient;
+    @org.springframework.beans.factory.annotation.Qualifier("paymentServiceRestTemplate")
     private final RestTemplate restTemplate;
 
     @Value("${booking.payment-service.timeout:5000}")

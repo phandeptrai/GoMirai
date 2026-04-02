@@ -51,7 +51,7 @@ import lombok.extern.slf4j.Slf4j;
  * - ADMIN có thể xem tất cả profiles
  */
 @RestController
-@RequestMapping("/api/users")
+@RequestMapping("/api/user")
 @RequiredArgsConstructor
 @Slf4j
 public class UserProfileController {

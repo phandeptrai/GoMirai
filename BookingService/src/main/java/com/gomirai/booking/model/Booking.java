@@ -64,7 +64,11 @@ public class Booking {
     
     // Helper methods
     public boolean canBeCanceled() {
-        return status == BookingStatus.PENDING || status == BookingStatus.MATCHED;
+        return status == BookingStatus.CREATED 
+            || status == BookingStatus.PENDING_PAYMENT 
+            || status == BookingStatus.CONFIRMED
+            || status == BookingStatus.PENDING 
+            || status == BookingStatus.MATCHED;
     }
     
     public boolean isCompleted() {

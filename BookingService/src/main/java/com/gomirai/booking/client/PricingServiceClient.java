@@ -30,6 +30,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 public class PricingServiceClient {
 
     private final DiscoveryClient discoveryClient;
+    @org.springframework.beans.factory.annotation.Qualifier("pricingServiceRestTemplate")
     private final RestTemplate restTemplate;
     private final java.util.concurrent.atomic.AtomicInteger nextInstanceIndex = new java.util.concurrent.atomic.AtomicInteger(
             0);

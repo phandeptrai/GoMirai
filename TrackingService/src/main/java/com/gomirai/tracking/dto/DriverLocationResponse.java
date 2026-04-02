@@ -15,4 +15,5 @@ public class DriverLocationResponse {
     private VehicleType vehicleType;
     private double distance; // Distance from search center (in meters)
     private long lastUpdatedAt;
+    private Object details; // Optional enriched profile details
 }

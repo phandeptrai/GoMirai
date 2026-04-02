@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
 import org.springframework.stereotype.Service;
 
 import com.gomirai.common.dto.event.DriverAvailabilityChangedEvent;
@@ -29,6 +31,7 @@ import com.gomirai.driver.model.DriverVehicle;
 import com.gomirai.driver.repository.DriverProfileRepository;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Service quản lý hồ sơ tài xế.
@@ -56,6 +59,7 @@ import lombok.RequiredArgsConstructor;
  * TrackingService cập nhật Redis
  */
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class DriverProfileService {
 
@@ -90,12 +94,12 @@ public class DriverProfileService {
 		profile.setUpdatedAt(Instant.now());
 
 		DriverProfile saved = driverProfileRepository.save(profile);
-		return toResponse(saved);
+		return toResponse(saved, true);
 	}
 
 	public DriverProfileResponse getCurrentDriverProfile() {
 		DriverProfile profile = getProfileForCurrentUser();
-		DriverProfileResponse response = toResponse(profile);
+		DriverProfileResponse response = toResponse(profile, true);
 
 		// Fetch Rating & Review stats direct from ReviewService for accuracy
 		try {
@@ -124,7 +128,7 @@ public class DriverProfileService {
 		DriverProfile profile = getProfileForCurrentUser();
 		profile.setLicenseNumber(request.licenseNumber().trim());
 		profile.setUpdatedAt(Instant.now());
-		return toResponse(driverProfileRepository.save(profile));
+		return toResponse(driverProfileRepository.save(profile), true);
 	}
 
 	public DriverVehicleResponse getCurrentVehicle() {
@@ -160,13 +164,29 @@ public class DriverProfileService {
 	public DriverProfileResponse getProfile(UUID driverId) {
 		DriverProfile profile = driverProfileRepository.findById(driverId)
 				.orElseThrow(() -> new NotFoundException("Không tìm thấy tài xế: " + driverId));
-		return toResponse(profile);
+		return toResponse(profile, true);
 	}
 
 	public DriverProfileResponse getProfileByUserId(UUID userId) {
 		DriverProfile profile = driverProfileRepository.findByUserId(userId)
 				.orElseThrow(() -> new NotFoundException("Không tìm thấy tài xế cho userId: " + userId));
-		return toResponse(profile);
+		return toResponse(profile, true);
+	}
+
+	public List<DriverProfileResponse> getProfilesByUserIds(List<UUID> userIds) {
+		List<DriverProfile> profiles = driverProfileRepository.findAllByUserIdIn(userIds);
+		return profiles.stream()
+				.map(p -> toResponse(p, false))
+				.toList();
+	}
+
+	public List<DriverProfileResponse> getProfilesByDriverIds(List<UUID> driverIds) {
+		Iterable<DriverProfile> profiles = driverProfileRepository.findAllById(driverIds);
+		java.util.List<DriverProfile> profileList = new java.util.ArrayList<>();
+		profiles.forEach(profileList::add);
+		return profileList.stream()
+				.map(p -> toResponse(p, false))
+				.toList();
 	}
 
 	/**
@@ -242,19 +262,21 @@ public class DriverProfileService {
 				phone);
 	}
 
-	public List<DriverProfileResponse> listByStatus(DriverAccountStatus status) {
-		List<DriverProfile> profiles = status == null
-				? driverProfileRepository.findAll()
-				: driverProfileRepository.findByAccountStatus(status);
-		return profiles.stream()
-				.map(this::toResponse)
-				.toList();
+	public Slice<DriverProfileResponse> listByStatus(DriverAccountStatus status, Pageable pageable) {
+		Slice<DriverProfile> profiles = status == null
+				? driverProfileRepository.findAllBy(pageable)
+				: driverProfileRepository.findByAccountStatus(status, pageable);
+		
+		log.info("ADMIN found {} drivers in current slice for status: {}", profiles.getNumberOfElements(), status);
+		
+		// Dùng false để không gọi ReviewService cho từng item trong list (tránh N+1)
+		return profiles.map(p -> toResponse(p, false));
 	}
 
 	public DriverProfileResponse approve(UUID driverId) {
 		DriverProfile profile = getRequiredProfile(driverId);
 		if (profile.getAccountStatus() == DriverAccountStatus.ACTIVE) {
-			return toResponse(profile);
+			return toResponse(profile, true);
 		}
 		if (profile.getAccountStatus() == DriverAccountStatus.BANNED) {
 			throw new BusinessException("Không thể duyệt tài xế đang bị khóa. Hãy mở khóa trước.");
@@ -263,17 +285,15 @@ public class DriverProfileService {
 		profile.setAvailabilityStatus(DriverAvailabilityStatus.OFFLINE);
 		profile.setUpdatedAt(Instant.now());
 
-		// Save first
 		DriverProfile saved = driverProfileRepository.save(profile);
 
-		// Publish event to notify UserService to update role to DRIVER
 		approvalEventsProducer.publishDriverApproved(
 				new DriverApprovedEvent(
 						saved.getUserId(),
 						saved.getDriverId(),
 						Instant.now().toString()));
 
-		return toResponse(saved);
+		return toResponse(saved, true);
 	}
 
 	public DriverProfileResponse reject(UUID driverId) {
@@ -281,7 +301,7 @@ public class DriverProfileService {
 		profile.setAccountStatus(DriverAccountStatus.REJECTED);
 		profile.setAvailabilityStatus(DriverAvailabilityStatus.OFFLINE);
 		profile.setUpdatedAt(Instant.now());
-		return toResponse(driverProfileRepository.save(profile));
+		return toResponse(driverProfileRepository.save(profile), true);
 	}
 
 	public DriverProfileResponse suspend(UUID driverId) {
@@ -289,7 +309,7 @@ public class DriverProfileService {
 		profile.setAccountStatus(DriverAccountStatus.BANNED);
 		profile.setAvailabilityStatus(DriverAvailabilityStatus.OFFLINE);
 		profile.setUpdatedAt(Instant.now());
-		return toResponse(driverProfileRepository.save(profile));
+		return toResponse(driverProfileRepository.save(profile), true);
 	}
 
 	public DriverProfileResponse unsuspend(UUID driverId) {
@@ -299,7 +319,7 @@ public class DriverProfileService {
 		}
 		profile.setAccountStatus(DriverAccountStatus.ACTIVE);
 		profile.setUpdatedAt(Instant.now());
-		return toResponse(driverProfileRepository.save(profile));
+		return toResponse(driverProfileRepository.save(profile), true);
 	}
 
 	private DriverStatusResponse updateAvailability(boolean online) {
@@ -313,7 +333,6 @@ public class DriverProfileService {
 		profile.setUpdatedAt(Instant.now());
 		driverProfileRepository.save(profile);
 
-		// Publish availability changed event for TrackingService (event-driven)
 		availabilityEventsProducer.publishAvailabilityChanged(
 				new DriverAvailabilityChangedEvent(
 						profile.getDriverId(),
@@ -331,10 +350,6 @@ public class DriverProfileService {
 		return profile;
 	}
 
-	/**
-	 * Get driverId from userId
-	 * Used to map between userId (from JWT) and driverId (in DriverService)
-	 */
 	public UUID getDriverIdByUserId(UUID userId) {
 		return driverProfileRepository.findByUserId(userId)
 				.map(DriverProfile::getDriverId)
@@ -370,15 +385,30 @@ public class DriverProfileService {
 				.build();
 	}
 
-	private DriverProfileResponse toResponse(DriverProfile profile) {
+	private DriverProfileResponse toResponse(DriverProfile profile, boolean fetchRealtimeRating) {
+		Double finalRating = profile.getRating();
+		Integer finalTrips = profile.getCompletedTrips();
+
+		if (fetchRealtimeRating) {
+			try {
+				var ratingSummary = reviewServiceClient.getRatingSummary(profile.getUserId());
+				if (ratingSummary != null) {
+					finalRating = ratingSummary.getAverageRating();
+					finalTrips = ratingSummary.getTotalReviews();
+				}
+			} catch (Exception e) {
+				log.warn("Failed to fetch realtime rating for driver {}: {}", profile.getUserId(), e.getMessage());
+			}
+		}
+
 		return new DriverProfileResponse(
 				profile.getDriverId(),
 				profile.getUserId(),
 				profile.getLicenseNumber(),
 				profile.getAccountStatus(),
 				profile.getAvailabilityStatus(),
-				profile.getRating(),
-				profile.getCompletedTrips(),
+				finalRating,
+				finalTrips,
 				profile.getVehicle() == null ? null : toVehicleResponse(profile.getVehicle()),
 				profile.getCreatedAt(),
 				profile.getUpdatedAt());

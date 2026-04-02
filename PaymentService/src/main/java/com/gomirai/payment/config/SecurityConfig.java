@@ -1,6 +1,9 @@
 package com.gomirai.payment.config;
 
+import com.gomirai.common.security.GatewayDelegationAuthenticationFilter;
+import com.gomirai.common.security.InternalApiKeyFilter;
 import com.gomirai.common.security.JwtAuthenticationFilter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -15,8 +18,21 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
+    @Value("${security.internal.api-key}")
+    private String internalApiKey;
+
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+    }
+
+    @Bean
+    public GatewayDelegationAuthenticationFilter gatewayDelegationAuthenticationFilter() {
+        return new GatewayDelegationAuthenticationFilter(internalApiKey);
+    }
+
+    @Bean
+    public InternalApiKeyFilter internalApiKeyFilter() {
+        return new InternalApiKeyFilter(internalApiKey);
     }
 
     @Bean
@@ -48,7 +64,9 @@ public class SecurityConfig {
                         .anyRequest().authenticated())
 
                 // Thêm Filter JWT từ common-lib để xác thực người dùng
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(gatewayDelegationAuthenticationFilter(), JwtAuthenticationFilter.class)
+                .addFilterBefore(internalApiKeyFilter(), GatewayDelegationAuthenticationFilter.class);
 
         return http.build();
     }

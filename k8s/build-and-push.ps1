@@ -4,8 +4,13 @@ $REGION = "asia-southeast1"
 $REPO_NAME = "gomirai-repo"
 $IMAGE_PREFIX = "$REGION-docker.pkg.dev/$PROJECT_ID/$REPO_NAME"
 
+# Thư mục gốc repo (script nằm trong k8s/)
+$repoRoot = Split-Path -Parent $PSScriptRoot
+Set-Location $repoRoot
+
 Write-Host "==========================================================" -ForegroundColor Cyan
 Write-Host "🚀 GoMirai Microservices - Build & Push to Artifact Registry" -ForegroundColor Cyan
+Write-Host "Repo root: $repoRoot" -ForegroundColor DarkGray
 Write-Host "==========================================================" -ForegroundColor Cyan
 
 # 1. Login to project
@@ -43,13 +48,41 @@ $SERVICES = @(
 
 # 5. Build and Push
 Write-Host "`n[4] Start Build and Push..." -ForegroundColor Yellow
-$currentDir = Get-Location
+
+# gomirai-common-lib không có trên Maven Central — phải install vào ~/.m2 trước
+Write-Host "`n[4a] Install gomirai-common-lib to local Maven repo..." -ForegroundColor Yellow
+$commonLibPath = Join-Path $repoRoot "gomirai-common-lib"
+$commonLibPom = Join-Path $commonLibPath "pom.xml"
+if (-not (Test-Path $commonLibPom)) {
+    throw "Missing gomirai-common-lib/pom.xml at: $commonLibPath"
+}
+
+$mvnOnPath = Get-Command mvn -ErrorAction SilentlyContinue
+$mvnwAuth = Join-Path $repoRoot "AuthService\mvnw.cmd"
+
+if ($mvnOnPath) {
+    Push-Location $commonLibPath
+    try {
+        & mvn install -DskipTests
+        if ($LASTEXITCODE -ne 0) { throw "mvn install failed for gomirai-common-lib" }
+    } finally {
+        Pop-Location
+    }
+} elseif (Test-Path $mvnwAuth) {
+    Write-Host "-> Using AuthService\mvnw.cmd (no system Maven on PATH)..." -ForegroundColor DarkGray
+    Set-Location $repoRoot
+    & $mvnwAuth "-f" $commonLibPom "install" "-DskipTests"
+    if ($LASTEXITCODE -ne 0) { throw "mvnw install failed for gomirai-common-lib" }
+} else {
+    throw "Need Maven: install Apache Maven on PATH, or ensure AuthService\mvnw.cmd exists."
+}
+Set-Location $repoRoot
 
 foreach ($svc in $SERVICES) {
     # Convert to PascalCase. E.g., auth-service -> AuthService
     $folderName = ([System.Globalization.CultureInfo]::CurrentCulture.TextInfo.ToTitleCase($svc)).Replace("-", "")
     
-    $folderPath = Join-Path $currentDir $folderName
+    $folderPath = Join-Path $repoRoot $folderName
     
     if (-not (Test-Path $folderPath)) {
         Write-Host "x Skip $svc (Folder not found: $folderName)" -ForegroundColor Red
@@ -86,12 +119,12 @@ foreach ($svc in $SERVICES) {
     }
     catch {
         Write-Host "x ERROR processing $svc" -ForegroundColor Red
-        Set-Location $currentDir
+        Set-Location $repoRoot
         throw $_
     }
 
-    Set-Location $currentDir
+    Set-Location $repoRoot
 }
 
 Write-Host "`n🎉 BUILD & PUSH COMPLETED!" -ForegroundColor Green
-Write-Host "Kubernetes will now re-pull the images." -ForegroundColor Yellow
+Write-Host "Tiếp theo: .\k8s\deploy-windows.ps1 (hoặc kubectl rollout restart nếu đã deploy)." -ForegroundColor Yellow

@@ -19,6 +19,7 @@ import com.gomirai.common.exception.BusinessException;
 import com.gomirai.pricing.dto.request.EstimateRequest;
 import com.gomirai.pricing.dto.request.FinalCalculationRequest;
 import com.gomirai.pricing.dto.response.PricingResponse;
+import com.gomirai.pricing.cache.PricingRuleCacheService;
 import com.gomirai.pricing.model.PricingRule;
 import com.gomirai.pricing.repository.PricingRuleRepository;
 
@@ -27,6 +28,9 @@ class PricingServiceTest {
 
     @Mock
     private PricingRuleRepository repository;
+
+    @Mock
+    private PricingRuleCacheService ruleCache;
 
     @InjectMocks
     private PricingService pricingService;
@@ -56,9 +60,7 @@ class PricingServiceTest {
         req.setDistanceKm(5.0);
         req.setDurationMinute(10);
 
-        when(repository.findFirstByVehicleTypeAndRegionAndActiveTrueOrderBySurgeMultiplierDesc(anyString(),
-                anyString()))
-                .thenReturn(Optional.of(mockRule));
+        when(ruleCache.findActiveRule(anyString(), anyString())).thenReturn(Optional.of(mockRule));
 
         // Act
         PricingResponse response = pricingService.estimate(req);
@@ -80,9 +82,7 @@ class PricingServiceTest {
         req.setDistanceKm(5.0);
         req.setDurationMinute(10);
 
-        when(repository.findFirstByVehicleTypeAndRegionAndActiveTrueOrderBySurgeMultiplierDesc(anyString(),
-                anyString()))
-                .thenReturn(Optional.empty());
+        when(ruleCache.findActiveRule(anyString(), anyString())).thenReturn(Optional.empty());
 
         // Act & Assert
         assertThrows(BusinessException.class, () -> pricingService.estimate(req));

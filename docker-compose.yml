@@ -53,14 +53,15 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-      KAFKA_CREATE_TOPICS: "notification.events:3:1"
+      KAFKA_CREATE_TOPICS: "notification.events:3:1,driver.booking.offer.batch:3:1"
     networks:
       - gomirai-network
     healthcheck:
-      test: ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
-      interval: 10s
-      timeout: 10s
+      test: ["CMD", "nc", "-z", "localhost", "9092"]
+      interval: 30s
+      timeout: 5s
       retries: 5
+      start_period: 30s
 
   # Notification Service
   notification-service:
@@ -84,6 +85,8 @@ services:
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SERVER_PORT: 8090
       SPRING_KAFKA_CONSUMER_GROUP_ID: notification-service
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
+      SECURITY_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
     networks:
       - gomirai-network
     restart: on-failure
@@ -119,6 +122,8 @@ services:
       SPRING_CLOUD_CONSUL_HOST: consul
       SPRING_CLOUD_CONSUL_PORT: 8500
       SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SECURITY_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
     networks:
       - gomirai-network
     restart: on-failure
@@ -129,9 +134,6 @@ services:
       context: .  # Build from root to access common-lib
       dockerfile: AuthService/Dockerfile
     container_name: auth-service
-    # ✅ SECURITY: Không expose port ra ngoài, chỉ giao tiếp internal qua API Gateway
-    # ports:
-    #   - "8081:8081"
     expose:
       - "8081"  # Chỉ expose trong internal network
     depends_on:
@@ -142,12 +144,15 @@ services:
     environment:
       SPRING_DATA_MONGODB_URI: ${AUTH_MONGODB_URI}
       SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SECURITY_PASSWORD_BCRYPT_STRENGTH: ${SECURITY_PASSWORD_BCRYPT_STRENGTH:-10}
       SPRING_CLOUD_CONSUL_HOST: consul
       SPRING_CLOUD_CONSUL_PORT: 8500
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       # Google OAuth
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
+      SECURITY_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
     networks:
       - gomirai-network
     restart: on-failure
@@ -158,9 +163,6 @@ services:
       context: .  # Build from root to access common-lib
       dockerfile: UserService/Dockerfile
     container_name: user-service
-    # ✅ SECURITY: Không expose port ra ngoài, chỉ giao tiếp internal qua API Gateway
-    # ports:
-    #   - "8082:8082"
     expose:
       - "8082"  # Chỉ expose trong internal network
     depends_on:
@@ -171,9 +173,11 @@ services:
     environment:
       SPRING_DATA_MONGODB_URI: ${USER_MONGODB_URI}
       SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SECURITY_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
       SPRING_CLOUD_CONSUL_HOST: consul
       SPRING_CLOUD_CONSUL_PORT: 8500
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
     networks:
       - gomirai-network
     restart: on-failure
@@ -194,9 +198,11 @@ services:
     environment:
       SPRING_DATA_MONGODB_URI: ${DRIVER_MONGODB_URI}
       SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SECURITY_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
       SPRING_CLOUD_CONSUL_HOST: consul
       SPRING_CLOUD_CONSUL_PORT: 8500
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
     networks:
       - gomirai-network
     restart: on-failure
@@ -217,6 +223,7 @@ services:
     environment:
       SPRING_DATA_MONGODB_URI: ${PAYMENT_MONGODB_URI}
       SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SECURITY_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
       SPRING_CLOUD_CONSUL_HOST: consul
       SPRING_CLOUD_CONSUL_PORT: 8500
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
@@ -225,6 +232,7 @@ services:
       VNPAY_HASH_SECRET: ${VNPAY_HASH_SECRET}
       VNPAY_PAYMENT_URL: ${VNPAY_PAYMENT_URL:-https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
       VNPAY_RETURN_URL: ${VNPAY_RETURN_URL:-http://localhost:3000/payment/vnpay/result}
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
     networks:
       - gomirai-network
     restart: on-failure
@@ -242,25 +250,17 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
-      # ✅ Redis local is optional - can use cloud Redis via SPRING_REDIS_URL
-      # Uncomment below if using local Redis:
-      # redis:
-      #   condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       # ✅ Using Redis Cloud URL
       SPRING_REDIS_URL: ${SPRING_REDIS_URL}
-      
-      # ✅ Option 2: Use local Redis (fallback if SPRING_REDIS_URL not set)
-      # SPRING_REDIS_HOST: ${SPRING_REDIS_HOST:redis}
-      # SPRING_REDIS_PORT: ${SPRING_REDIS_PORT:6379}
-      # SPRING_REDIS_PASSWORD: ${SPRING_REDIS_PASSWORD:}
-      # SPRING_REDIS_USERNAME: ${SPRING_REDIS_USERNAME:}
-      # SPRING_REDIS_SSL_ENABLED: ${SPRING_REDIS_SSL_ENABLED:false}
-      
       SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SECURITY_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
       SPRING_CLOUD_CONSUL_HOST: consul
       SPRING_CLOUD_CONSUL_PORT: 8500
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
     networks:
       - gomirai-network
     restart: on-failure
@@ -282,33 +282,31 @@ services:
     environment:
       # Mapbox API Token
       MAPBOX_ACCESS_TOKEN: ${MAPBOX_ACCESS_TOKEN}
-      
       # Security
       SECURITY_JWT_SECRET: ${JWT_SECRET}
-      
+      SECURITY_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
       # Infrastructure
       SPRING_CLOUD_CONSUL_HOST: consul
       SPRING_CLOUD_CONSUL_PORT: 8500
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
     networks:
       - gomirai-network
     restart: on-failure
 
   # Redis - For Tracking Service (Local Development)
-  # ✅ DISABLED - Using Redis Cloud instead
-  # Uncomment below if you want to use local Redis container:
-  # redis:
-  #   image: redis:7.2-alpine
-  #   container_name: redis
-  #   ports:
-  #     - "6379:6379"
-  #   networks:
-  #     - gomirai-network
-  #   healthcheck:
-  #     test: ["CMD", "redis-cli", "ping"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 5
+  redis:
+    image: redis:7.2-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - gomirai-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # Pricing Service
   pricing-service:
@@ -326,11 +324,13 @@ services:
     environment:
       SPRING_DATA_MONGODB_URI: ${PRICING_MONGODB_URI}
       SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SECURITY_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
       SPRING_CLOUD_CONSUL_HOST: consul
       SPRING_CLOUD_CONSUL_PORT: 8500
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SERVER_PORT: 8087
       SPRING_PROFILES_ACTIVE: dev
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
     networks:
       - gomirai-network
     restart: on-failure
@@ -351,11 +351,13 @@ services:
     environment:
       SPRING_DATA_MONGODB_URI: ${BOOKING_MONGODB_URI}
       SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SECURITY_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
       SPRING_CLOUD_CONSUL_HOST: consul
       SPRING_CLOUD_CONSUL_PORT: 8500
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SERVER_PORT: 8088
       SPRING_PROFILES_ACTIVE: dev
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
     networks:
       - gomirai-network
     restart: on-failure
@@ -378,11 +380,13 @@ services:
     environment:
       SPRING_DATA_MONGODB_URI: ${REVIEW_MONGODB_URI}
       SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SECURITY_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
       SPRING_CLOUD_CONSUL_HOST: consul
       SPRING_CLOUD_CONSUL_PORT: 8500
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       SERVER_PORT: 8089
       SPRING_PROFILES_ACTIVE: dev
+      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
     networks:
       - gomirai-network
     restart: on-failure

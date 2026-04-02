@@ -61,6 +61,8 @@ class BookingServiceTest {
     @Mock
     private BookingEventsProducer eventsProducer;
     @Mock
+    private BookingPersistenceService bookingPersistenceService;
+    @Mock
     private SecurityUtils securityUtils;
     @Mock
     private MongoTemplate mongoTemplate;
@@ -110,7 +112,8 @@ class BookingServiceTest {
                 .thenReturn(new MapServiceRouteResponse(5000.0, 600, null, "polyline", null));
         when(pricingServiceClient.estimateFare(anyString(), anyDouble(), anyInt(), anyString()))
                 .thenReturn(new PricingServiceResponse(50000L, UUID.randomUUID()));
-        when(bookingRepository.save(any(Booking.class))).thenAnswer(i -> i.getArgument(0));
+        when(bookingPersistenceService.saveBookingAndScheduleDriverSearch(any(Booking.class), any()))
+                .thenAnswer(i -> i.getArgument(0));
 
         // Act
         BookingResponse response = bookingService.createBooking(request);
@@ -118,7 +121,7 @@ class BookingServiceTest {
         // Assert
         assertNotNull(response);
         assertEquals(BookingStatus.PENDING, response.getStatus());
-        verify(eventsProducer).publishSearchDriversEvent(any());
+        verify(bookingPersistenceService).saveBookingAndScheduleDriverSearch(any(Booking.class), any());
         verify(paymentServiceClient, never()).payRide(any());
     }
 
@@ -153,7 +156,7 @@ class BookingServiceTest {
 
         // Act & Assert
         assertThrows(BusinessException.class, () -> bookingService.createBooking(request));
-        verify(bookingRepository, never()).save(any());
+        verify(bookingPersistenceService, never()).saveBookingAndScheduleDriverSearch(any(), any());
     }
 
     @Test

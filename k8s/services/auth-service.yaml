@@ -11,7 +11,7 @@ metadata:
     version: "1.0"
     tier: backend
 spec:
-  replicas: 3
+  replicas: 2
   selector:
     matchLabels:
       app: auth-service
@@ -38,25 +38,32 @@ spec:
                 name: gomirai-config
             - secretRef:
                 name: gomirai-secrets
+          resources:
             requests:
-              memory: "256Mi"
-              cpu: "100m"
+              memory: "512Mi"
+              cpu: "300m"
             limits:
               memory: "512Mi"
-              cpu: "250m"
+              cpu: "1000m"
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8081
+            failureThreshold: 30
+            periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /actuator/health
               port: 8081
-            initialDelaySeconds: 45
+            initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /actuator/health
               port: 8081
-            initialDelaySeconds: 90
-            periodSeconds: 15
+            initialDelaySeconds: 15
+            periodSeconds: 20
             failureThreshold: 3
           lifecycle:
             preStop:
@@ -86,8 +93,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: auth-service
-  minReplicas: 3
-  maxReplicas: 5
+  minReplicas: 2
+  maxReplicas: 3
   metrics:
     - type: Resource
       resource:
@@ -95,4 +102,15 @@ spec:
         target:
           type: Utilization
           averageUtilization: 50
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: auth-service-pdb
+  namespace: gomirai
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: auth-service
 ---

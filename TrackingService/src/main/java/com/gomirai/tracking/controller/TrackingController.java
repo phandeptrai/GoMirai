@@ -14,6 +14,8 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 
+import lombok.extern.slf4j.Slf4j;
+
 /**
  * Controller theo dõi vị trí tài xế theo thời gian thực.
  * 
@@ -32,6 +34,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/tracking")
 @RequiredArgsConstructor
+@Slf4j
 public class TrackingController {
 
     private final TrackingService trackingService;
@@ -49,11 +52,12 @@ public class TrackingController {
     }
 
     /**
-     * Tìm tài xế lân cận - bất kỳ user đã authenticated (CUSTOMER/DRIVER/ADMIN).
+     * Tìm tài xế lân cận - Chỉ hỗ trợ POST (JSON Body cho Mobile App/BookingService).
      */
     @PostMapping("/nearby")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> findNearbyDrivers(@RequestBody @Valid NearbyDriverRequest request) {
+        log.debug("Nearby search request: {}", request);
         List<DriverLocationResponse> drivers = trackingService.findNearbyDrivers(request);
         return ResponseEntity.ok(drivers);
     }

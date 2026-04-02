@@ -1,6 +1,7 @@
 package com.gomirai.common.security;
 
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtParser;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.io.Decoders;
@@ -28,6 +29,7 @@ public class JwtService {
 
     private final SecretKey key;
     private final long accessTtlMillis;
+    private final JwtParser jwtParser;
 
     /**
      * Constructor with secret and TTL
@@ -44,6 +46,7 @@ public class JwtService {
         
         this.key = Keys.hmacShaKeyFor(secretBytes);
         this.accessTtlMillis = accessTtlMillis;
+        this.jwtParser = Jwts.parser().verifyWith(key).build();
     }
 
     /**
@@ -68,12 +71,7 @@ public class JwtService {
      */
     public Optional<Claims> parseToken(String token) {
         try {
-            Claims claims = Jwts.parser()
-                    .verifyWith(key)
-                    .build()
-                    .parseSignedClaims(token)
-                    .getPayload();
-            return Optional.of(claims);
+            return Optional.of(jwtParser.parseSignedClaims(token).getPayload());
         } catch (Exception e) {
             // Token is invalid, expired, or malformed
             return Optional.empty();
@@ -117,7 +115,12 @@ public class JwtService {
      * Validate token
      */
     public boolean validateToken(String token) {
-        return parseToken(token).isPresent() && !isTokenExpired(token);
+        Optional<Claims> claims = parseToken(token);
+        if (claims.isEmpty()) {
+            return false;
+        }
+        Date exp = claims.get().getExpiration();
+        return exp == null || !exp.before(new Date());
     }
 }
 

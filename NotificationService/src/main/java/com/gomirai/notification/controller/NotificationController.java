@@ -17,7 +17,7 @@ import java.util.UUID;
  * Chức năng: Tạo notification, lấy danh sách, đánh dấu đã đọc.
  */
 @RestController
-@RequestMapping("/api/notifications")
+@RequestMapping("/api/notification")
 public class NotificationController {
 
     private final NotificationService service;

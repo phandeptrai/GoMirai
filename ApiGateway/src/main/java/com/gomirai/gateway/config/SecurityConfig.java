@@ -1,5 +1,6 @@
 package com.gomirai.gateway.config;
 
+import com.gomirai.common.security.InternalApiKeyFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -42,6 +43,8 @@ import java.util.stream.Collectors;
  * - /api/pricing/estimate: Tính giá trước khi đặt
  * - /api/review/reviewee/**: Xem review công khai
  * - /api/payment/vnpay/callback, return: VNPay callback (VNPay server gọi)
+ * - /api/booking/{id}/info: Lấy booking info nội bộ (TrackingService gọi)
+ * - /api/booking/{id}/cancel-no-driver: Hủy booking nội bộ (TrackingService gọi)
  * 
  * === CÁC REQUEST KHÁC ===
  * Tất cả requests khác cần JWT hợp lệ trong header Authorization
@@ -71,10 +74,18 @@ public class SecurityConfig {
         @Value("${cors.max.age}")
         private long maxAge;
 
+        @Value("${security.internal.api-key}")
+        private String internalApiKey;
+
         public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
                         JwtAuthenticationEntryPoint authenticationEntryPoint) {
                 this.jwtAuthenticationFilter = jwtAuthenticationFilter;
                 this.authenticationEntryPoint = authenticationEntryPoint;
+        }
+
+        @Bean
+        public InternalApiKeyFilter internalApiKeyFilter() {
+                return new InternalApiKeyFilter(internalApiKey);
         }
 
         @Bean
@@ -122,10 +133,15 @@ public class SecurityConfig {
                                                 .requestMatchers(HttpMethod.GET, "/api/payment/vnpay/return")
                                                 .permitAll()
 
+                                                // Internal booking endpoints - chỉ cho phép khi có X-Internal-Api-Key hợp lệ
+                                                .requestMatchers(HttpMethod.GET, "/api/booking/*/info").hasRole("INTERNAL_SERVICE")
+                                                .requestMatchers(HttpMethod.POST, "/api/booking/*/cancel-no-driver").hasRole("INTERNAL_SERVICE")
+
                                                 // Tất cả các requests khác cần authentication
                                                 .anyRequest().authenticated())
 
-                                // Add JWT filter
+                                // InternalApiKeyFilter và JwtAuthenticationFilter chạy trước UsernamePasswordAuthenticationFilter
+                                .addFilterBefore(internalApiKeyFilter(), UsernamePasswordAuthenticationFilter.class)
                                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
                 // Security headers

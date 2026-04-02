@@ -8,6 +8,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -43,6 +44,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     ) throws ServletException, IOException {
         
         try {
+            Authentication existing = SecurityContextHolder.getContext().getAuthentication();
+            if (existing != null && existing.isAuthenticated() && existing.getPrincipal() instanceof UUID) {
+                filterChain.doFilter(request, response);
+                return;
+            }
+
             // Extract Authorization header
             String header = request.getHeader(HttpHeaders.AUTHORIZATION);
             
@@ -77,7 +84,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                             // Set authentication in Security Context
                             SecurityContextHolder.getContext().setAuthentication(authentication);
                             
-                            log.info("JWT authentication successful for user: {}, role: {}, authority: {}", 
+                            log.debug("JWT authentication successful for user: {}, role: {}, authority: {}",
                                 userId, role, authority);
                         } catch (IllegalArgumentException e) {
                             log.warn("Invalid UUID format in JWT token: {}", userIdStr);

@@ -5,9 +5,7 @@ import com.gomirai.booking.repository.BookingRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -23,8 +21,20 @@ public class BookingCleanupService {
     @Value("${booking.expiry-timeout-minutes:10}")
     private int expiryTimeoutMinutes;
 
-    @Scheduled(fixedRate = 60000) // Run every minute
-    @Transactional
+    /**
+     * DISABLED: TrackingService.BookingSearchScheduler đã xử lý timeout booking qua:
+     *  1. cancelExpiredBookings() scheduler (chạy mỗi 60s, dùng Redis search state TTL)
+     *  2. BookingCanceledConsumer nhận Kafka event và remove search state
+     *
+     * Bật lại @Scheduled nếu muốn BookingService tự cleanup độc lập với TrackingService.
+     * Lưu ý: BookingService.cancelBookingNoDriverFound() đã có status guard nên không
+     * gây double-event, nhưng vẫn gây thêm DB reads và potential race condition.
+     *
+     * Nếu cần bật lại, đảm bảo expiryTimeoutMinutes >= maxSearchDurationMinutes (TrackingService)
+     * để BookingService không cancel sớm hơn khi TrackingService vẫn đang tìm tài xế.
+     */
+    // @Scheduled(fixedRate = 60000)
+    // @Transactional
     public void cleanupExpiredBookings() {
         LocalDateTime expiryTime = LocalDateTime.now().minusMinutes(expiryTimeoutMinutes);
         

@@ -1,25 +1,22 @@
-# Stage 1:# Stage 1: Build
+# syntax=docker/dockerfile:1
 FROM eclipse-temurin:21-jdk-alpine AS build
-WORKDIR /scan
+WORKDIR /workspace
+RUN apk add --no-cache maven
 
-# Copy common lib
-COPY gomirai-common-lib /scan/gomirai-common-lib
-COPY PaymentService /scan/PaymentService
+COPY gomirai-common-lib ./gomirai-common-lib
+WORKDIR /workspace/gomirai-common-lib
+RUN --mount=type=cache,target=/root/.m2 mvn clean install -DskipTests
 
-# Build Common Lib
-WORKDIR /scan/gomirai-common-lib
-RUN ../PaymentService/mvnw clean install -DskipTests
+WORKDIR /workspace/PaymentService
+COPY PaymentService/pom.xml .
+RUN --mount=type=cache,target=/root/.m2 mvn dependency:go-offline -B
+COPY PaymentService/src ./src
+RUN --mount=type=cache,target=/root/.m2 mvn clean package -DskipTests
 
-# Build Service
-WORKDIR /scan/PaymentService
-RUN ./mvnw clean package -DskipTests
-
-# Stage 2: Runtime
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 RUN addgroup -S spring && adduser -S spring -G spring
 USER spring:spring
-
-COPY --from=build /scan/PaymentService/target/*.jar app.jar
-EXPOSE 8083
+COPY --from=build /workspace/PaymentService/target/*.jar app.jar
+EXPOSE 8089
 ENTRYPOINT ["java", "-jar", "app.jar"]

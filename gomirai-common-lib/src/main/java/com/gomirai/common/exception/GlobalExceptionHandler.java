@@ -12,6 +12,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import org.springframework.security.access.AccessDeniedException;
+
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -68,6 +70,23 @@ public class GlobalExceptionHandler {
             "Forbidden",
             e.getMessage()
         );
+        return new ResponseEntity<>(error, HttpStatus.FORBIDDEN);
+    }
+
+    /**
+     * Handle Spring Security authorization failures (method-level @PreAuthorize, etc.)
+     * so we don't spam stack traces for expected 403 cases.
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAuthorizationDenied(AccessDeniedException e) {
+        log.warn("Forbidden access: {}", e.getMessage());
+
+        ErrorResponse error = new ErrorResponse(
+                HttpStatus.FORBIDDEN.value(),
+                "Forbidden",
+                e.getMessage()
+        );
+
         return new ResponseEntity<>(error, HttpStatus.FORBIDDEN);
     }
 

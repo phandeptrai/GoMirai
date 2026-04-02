@@ -35,7 +35,7 @@
 		<dependency>
 			<groupId>com.gomirai</groupId>
 			<artifactId>gomirai-common-lib</artifactId>
-			<version>1.0.1</version>
+			<version>1.0.4</version>
 		</dependency>
 
 		<!-- 2. Service Discovery (Consul) -->

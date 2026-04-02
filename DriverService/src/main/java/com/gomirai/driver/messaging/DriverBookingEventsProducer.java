@@ -38,7 +38,7 @@ public class DriverBookingEventsProducer {
     public void publishDriverAccepted(DriverAcceptedEvent event) {
         try {
             kafkaTemplate.send(driverAcceptedTopic, event.getBookingId().toString(), event);
-            log.info("Published DriverAcceptedEvent: bookingId={}, driverId={}",
+            log.debug("Published DriverAcceptedEvent: bookingId={}, driverId={}",
                     event.getBookingId(), event.getDriverId());
         } catch (Exception e) {
             log.error("Failed to publish DriverAcceptedEvent for bookingId={}",
@@ -57,15 +57,9 @@ public class DriverBookingEventsProducer {
      */
     public void publishDriverOfferNotification(DriverBookingOfferEvent event) {
         try {
-            long publishTs = System.currentTimeMillis();
-            log.info("=== [KAFKA PUBLISH] Driver Offer Notification ===");
-            log.info("[KAFKA PUBLISH] timestamp={}, bookingId={}, driverId={}, userId={}",
-                    publishTs, event.getBookingId(), event.getDriverId(), event.getUserId());
-            log.info("[KAFKA PUBLISH] topic={}, key={}", driverOfferNotificationTopic, event.getUserId());
-
             kafkaTemplate.send(driverOfferNotificationTopic, event.getUserId().toString(), event);
-
-            log.info("[KAFKA PUBLISH] ✓ Event sent at {}", publishTs);
+            log.debug("Published driver offer notification bookingId={}, userId={}",
+                    event.getBookingId(), event.getUserId());
         } catch (Exception e) {
             log.error("[KAFKA PUBLISH] ✗ Failed to publish: bookingId={}",
                     event.getBookingId(), e);

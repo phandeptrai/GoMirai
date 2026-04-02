@@ -7,6 +7,7 @@ import com.gomirai.payment.model.*;
 import com.gomirai.payment.repository.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
@@ -90,18 +91,33 @@ public class WalletServiceImpl implements WalletService {
                     tx.getStatus(), wallet.getBalance());
         }
 
-        // 2. Process payment
-        Wallet wallet = walletRepository.findByUserId(request.userId())
-                .orElseThrow(() -> new BusinessException("WALLET_NOT_FOUND"));
-        if (wallet.getBalance().compareTo(request.amount()) < 0) {
-            throw new BusinessException("INSUFFICIENT_BALANCE");
-        }
-        wallet.setBalance(wallet.getBalance().subtract(request.amount()));
-        walletRepository.save(wallet);
+        // 2. Process payment with optimistic-lock retry
+        // SAFETY #4: @Version on Wallet means concurrent writes throw OptimisticLockingFailureException.
+        // We retry up to 3 times with 50 ms back-off instead of failing the caller.
+        int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                Wallet wallet = walletRepository.findByUserId(request.userId())
+                        .orElseThrow(() -> new BusinessException("WALLET_NOT_FOUND"));
+                if (wallet.getBalance().compareTo(request.amount()) < 0) {
+                    throw new BusinessException("INSUFFICIENT_BALANCE");
+                }
+                wallet.setBalance(wallet.getBalance().subtract(request.amount()));
+                walletRepository.save(wallet);
 
-        Transaction tx = createTx(wallet.getWalletId(), request.bookingId(), request.amount(), "OUT", "RIDE_PAYMENT");
-        return new TransactionResponse(tx.getTransactionId(), tx.getType(), tx.getDirection(), tx.getAmount(),
-                tx.getStatus(), wallet.getBalance());
+                Transaction tx = createTx(wallet.getWalletId(), request.bookingId(), request.amount(), "OUT", "RIDE_PAYMENT");
+                return new TransactionResponse(tx.getTransactionId(), tx.getType(), tx.getDirection(), tx.getAmount(),
+                        tx.getStatus(), wallet.getBalance());
+            } catch (OptimisticLockingFailureException e) {
+                if (attempt == maxAttempts) {
+                    log.error("payRide optimistic lock conflict after {} attempts for bookingId={}", maxAttempts, request.bookingId());
+                    throw new BusinessException("TRANSACTION_FAILED");
+                }
+                log.warn("payRide optimistic lock conflict attempt {}/{}, retrying...", attempt, maxAttempts);
+                try { Thread.sleep(50L * attempt); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+            }
+        }
+        throw new BusinessException("TRANSACTION_FAILED");
     }
 
     @Override // Annotation này giúp xác nhận phương thức khớp với Interface

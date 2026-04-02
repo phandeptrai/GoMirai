@@ -42,8 +42,7 @@ public class DriverRatingUpdatedConsumer {
             Acknowledgment acknowledgment) {
 
         try {
-            log.info("=== [KAFKA RECEIVE] DriverRatingUpdatedEvent ===");
-            log.info("driverUserId={}, avgRating={}, totalReviews={}",
+            log.debug("DriverRatingUpdatedEvent driverUserId={}, avgRating={}, totalReviews={}",
                     event.getDriverUserId(), event.getAverageRating(), event.getTotalReviews());
 
             // Tìm driver profile bằng userId
@@ -65,7 +64,7 @@ public class DriverRatingUpdatedConsumer {
 
             driverProfileRepository.save(profile);
 
-            log.info("✓ Updated driver rating: {} -> {} (driverId: {})",
+            log.debug("Updated driver rating: {} -> {} (driverId: {})",
                     oldRating, event.getAverageRating(), profile.getDriverId());
 
             acknowledgment.acknowledge();

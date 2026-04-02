@@ -15,6 +15,8 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import com.gomirai.auth.filter.RateLimitingFilter;
+import com.gomirai.common.security.GatewayDelegationAuthenticationFilter;
+import com.gomirai.common.security.InternalApiKeyFilter;
 import com.gomirai.common.security.JwtAuthenticationFilter;
 
 import java.util.Arrays;
@@ -53,10 +55,23 @@ public class SecurityConfig {
     @Value("${cors.max.age}")
     private long maxAge;
 
+    @Value("${security.internal.api-key}")
+    private String internalApiKey;
+
     public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
-            RateLimitingFilter rateLimitingFilter) {
+                          RateLimitingFilter rateLimitingFilter) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.rateLimitingFilter = rateLimitingFilter;
+    }
+
+    @Bean
+    public GatewayDelegationAuthenticationFilter gatewayDelegationAuthenticationFilter() {
+        return new GatewayDelegationAuthenticationFilter(internalApiKey);
+    }
+
+    @Bean
+    public InternalApiKeyFilter internalApiKeyFilter() {
+        return new InternalApiKeyFilter(internalApiKey);
     }
 
     /**
@@ -95,7 +110,9 @@ public class SecurityConfig {
                 // Thêm Rate Limiting Filter TRƯỚC JWT filter
                 // Để chặn brute force trước khi xử lý authentication
                 .addFilterBefore(rateLimitingFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(gatewayDelegationAuthenticationFilter(), JwtAuthenticationFilter.class)
+                .addFilterBefore(internalApiKeyFilter(), GatewayDelegationAuthenticationFilter.class);
 
         // Cấu hình Security Headers
         http.headers(headers -> headers
@@ -142,11 +159,12 @@ public class SecurityConfig {
     }
 
     /**
-     * Bean mã hóa mật khẩu.
-     * Sử dụng BCrypt - thuật toán hash an toàn với salt tự động.
+     * Bean mã hóa mật khẩu (BCrypt). Độ mạnh cấu hình qua {@code security.password.bcrypt-strength}
+     * (mặc định 10). Giảm chỉ trên môi trường dev/load-test — production nên ≥10.
      */
     @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
+    public PasswordEncoder passwordEncoder(
+            @Value("${security.password.bcrypt-strength:10}") int bcryptStrength) {
+        return new BCryptPasswordEncoder(bcryptStrength);
     }
 }

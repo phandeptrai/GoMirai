@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 import java.util.UUID;
 
-@FeignClient(name = "ReviewService")
+@FeignClient(name = "review-service")
 public interface ReviewServiceClient {
 
     @GetMapping("/api/review/reviewee/{revieweeId}/rating")

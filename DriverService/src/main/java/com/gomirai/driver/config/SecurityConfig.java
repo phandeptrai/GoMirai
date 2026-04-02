@@ -17,6 +17,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import com.gomirai.common.security.GatewayDelegationAuthenticationFilter;
 import com.gomirai.common.security.JwtAuthenticationEntryPoint;
 import com.gomirai.common.security.JwtAuthenticationFilter;
 
@@ -49,10 +50,23 @@ public class SecurityConfig {
 	@Value("${cors.max.age:3600}")
 	private long maxAge;
 
+	@Value("${security.internal.api-key:gomirai-internal-s3cr3t-k3y-2026-ch4ng3-m3-1n-pr0ductI0n}")
+	private String internalApiKey;
+
 	public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
 			JwtAuthenticationEntryPoint authenticationEntryPoint) {
 		this.jwtAuthenticationFilter = jwtAuthenticationFilter;
 		this.authenticationEntryPoint = authenticationEntryPoint;
+	}
+
+	@Bean
+	public com.gomirai.common.security.InternalApiKeyFilter internalApiKeyFilter() {
+		return new com.gomirai.common.security.InternalApiKeyFilter(internalApiKey);
+	}
+
+	@Bean
+	public GatewayDelegationAuthenticationFilter gatewayDelegationAuthenticationFilter() {
+		return new GatewayDelegationAuthenticationFilter(internalApiKey);
 	}
 
 	@Bean
@@ -69,7 +83,9 @@ public class SecurityConfig {
 						// Public driver info for customer to view during trip
 						.requestMatchers("/api/drivers/user/*/public").permitAll()
 						.anyRequest().authenticated())
-				.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+				.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+				.addFilterBefore(gatewayDelegationAuthenticationFilter(), JwtAuthenticationFilter.class)
+				.addFilterBefore(internalApiKeyFilter(), GatewayDelegationAuthenticationFilter.class);
 
 		http.headers(headers -> headers
 				.contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'"))

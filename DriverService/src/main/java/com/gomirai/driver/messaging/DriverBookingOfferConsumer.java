@@ -28,20 +28,17 @@ public class DriverBookingOfferConsumer {
             @Header(KafkaHeaders.RECEIVED_KEY) String key,
             Acknowledgment acknowledgment) {
         try {
-            log.info("=== DriverService: Received DriverBookingOfferEvent ===");
-            log.info("bookingId={}, driverId={}, vehicleType={}, fare={}, pickup=({},{})", 
-                event.getBookingId(), event.getDriverId(), event.getVehicleType(), 
-                event.getEstimatedFare(), event.getPickupLatitude(), event.getPickupLongitude());
-            
+            log.debug("Received DriverBookingOfferEvent bookingId={}, driverId={}",
+                event.getBookingId(), event.getDriverId());
+
             driverBookingService.handleDriverBookingOffer(event);
-            
+
             acknowledgment.acknowledge();
-            log.info("✓ Successfully processed DriverBookingOfferEvent for bookingId={}, driverId={}", 
+            log.trace("Processed DriverBookingOfferEvent bookingId={}, driverId={}",
                 event.getBookingId(), event.getDriverId());
         } catch (Exception e) {
-            log.error("✗ Error processing DriverBookingOfferEvent for bookingId={}, driverId={}", 
+            log.error("Error processing DriverBookingOfferEvent for bookingId={}, driverId={}",
                 event.getBookingId(), event.getDriverId(), e);
-            e.printStackTrace();
             // Could implement retry logic here
         }
     }

@@ -4,7 +4,7 @@ metadata:
   name: api-gateway
   namespace: gomirai
 spec:
-  replicas: 3
+  replicas: 2
   selector:
     matchLabels:
       app: api-gateway
@@ -28,24 +28,31 @@ spec:
                 name: gomirai-config
             - secretRef:
                 name: gomirai-secrets
+          resources:
             requests:
-              memory: "256Mi"
-              cpu: "100m"
-            limits:
               memory: "512Mi"
-              cpu: "250m"
+              cpu: "500m"   # PERF #3: 300m→500m to avoid throttling under JWT validation load
+            limits:
+              memory: "768Mi"  # slightly more headroom for burst
+              cpu: "600m"   # 600m × 5 maxReplicas = 3 vCPU max for gateway
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            failureThreshold: 30
+            periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /actuator/health
               port: 8080
-            initialDelaySeconds: 90
-            periodSeconds: 15
+            initialDelaySeconds: 15
+            periodSeconds: 20
             failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /actuator/health
               port: 8080
-            initialDelaySeconds: 45
+            initialDelaySeconds: 10
             periodSeconds: 10
             failureThreshold: 3
           lifecycle:
@@ -77,8 +84,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: api-gateway
-  minReplicas: 3
-  maxReplicas: 10
+  minReplicas: 2
+  maxReplicas: 5   # PERF #3: 6→5 to cap gateway at 3 vCPU total within 24 vCPU quota
   metrics:
     - type: Resource
       resource:
@@ -92,4 +99,15 @@ spec:
         target:
           type: Utilization
           averageUtilization: 50
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api-gateway-pdb
+  namespace: gomirai
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: api-gateway
 ---

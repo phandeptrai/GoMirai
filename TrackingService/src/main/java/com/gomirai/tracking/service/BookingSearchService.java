@@ -8,7 +8,7 @@ import com.gomirai.tracking.client.BookingServiceClient;
 import com.gomirai.tracking.dto.BookingInfoResponse;
 import com.gomirai.tracking.dto.DriverLocationResponse;
 import com.gomirai.tracking.dto.NearbyDriverRequest;
-import com.gomirai.common.dto.event.DriverBookingOfferEvent;
+import com.gomirai.common.dto.event.DriverBookingOffersBatchEvent;
 import com.gomirai.tracking.messaging.DriverBookingEventsProducer;
 import com.gomirai.tracking.model.BookingSearchState;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +18,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -34,6 +35,7 @@ public class BookingSearchService {
     private final BookingServiceClient bookingServiceClient;
     
     private static final String SEARCH_STATE_KEY_PREFIX = "booking:search:";
+    private static final String ACTIVE_BOOKINGS_SET_KEY = "booking:search:active"; // Redis Set of active bookingIds
     private static final long SEARCH_STATE_TTL_SECONDS = 900; // 15 minutes
     
     @Value("${booking.search.initial-radius-meters:2000}")
@@ -54,16 +56,15 @@ public class BookingSearchService {
     public void handleBookingSearchDrivers(BookingSearchDriversEvent event) {
         UUID bookingId = event.getBookingId();
         
-        log.info("=== Handling BookingSearchDriversEvent ===");
-        log.info("bookingId={}, pickup=({},{}), vehicleType={}, radius={}m", 
-            bookingId, event.getPickupLatitude(), event.getPickupLongitude(), 
+        log.debug("Handling BookingSearchDriversEvent bookingId={}, pickup=({},{}), vehicleType={}, radius={}m",
+            bookingId, event.getPickupLatitude(), event.getPickupLongitude(),
             event.getVehicleType(), event.getRadiusMeters());
-        
+
         try {
             // Tạo hoặc cập nhật trạng thái tìm kiếm
             BookingSearchState searchState = getOrCreateSearchState(event);
-            log.info("Search state created/updated: currentRadius={}m, attempts={}", 
-                searchState.getCurrentRadiusMeters(), searchState.getSearchAttempts());
+            log.debug("Search state bookingId={}: radius={}m, attempts={}",
+                bookingId, searchState.getCurrentRadiusMeters(), searchState.getSearchAttempts());
             
             // Tìm tài xế gần
             List<DriverLocationResponse> nearbyDrivers = findNearbyDrivers(
@@ -73,27 +74,13 @@ public class BookingSearchService {
                 event.getVehicleType()
             );
             
-            log.info("Found {} nearby drivers for bookingId={}", nearbyDrivers.size(), bookingId);
+            log.debug("Found {} nearby drivers for bookingId={}", nearbyDrivers.size(), bookingId);
             
             if (!nearbyDrivers.isEmpty()) {
-                // Có tài xế gần, gửi event cho các driver
-                log.info("Sending offers to {} drivers for bookingId={}", nearbyDrivers.size(), bookingId);
-                
-                // Check if this is initial search or radius expansion
+                log.debug("Sending batch offers to {} drivers for bookingId={}", nearbyDrivers.size(), bookingId);
+
                 boolean isExpansion = searchState.getSearchAttempts() > 0;
-                
-                int sentCount = 0;
-                for (DriverLocationResponse driver : nearbyDrivers) {
-                    try {
-                        sendBookingOfferToDriver(bookingId, driver, searchState, isExpansion);
-                        sentCount++;
-                    } catch (Exception e) {
-                        log.error("Failed to send offer to driver {} for bookingId={}", 
-                            driver.getDriverId(), bookingId, e);
-                    }
-                }
-                
-                log.info("Successfully sent {} offers for bookingId={}", sentCount, bookingId);
+                publishBookingOffersBatch(bookingId, nearbyDrivers, searchState, isExpansion);
                 
                 // Cập nhật trạng thái
                 searchState.setLastSearchTime(LocalDateTime.now());
@@ -112,7 +99,6 @@ public class BookingSearchService {
             
         } catch (Exception e) {
             log.error("Error handling BookingSearchDriversEvent for bookingId={}", bookingId, e);
-            e.printStackTrace();
         }
     }
     
@@ -151,7 +137,7 @@ public class BookingSearchService {
             request.setLimit(20); // Tối đa 20 tài xế
             
             List<DriverLocationResponse> drivers = trackingService.findNearbyDrivers(request);
-            log.info("Found {} nearby drivers for vehicleType={} at ({}, {}) within {}m", 
+            log.debug("Found {} nearby drivers for vehicleType={} at ({}, {}) within {}m",
                 drivers.size(), vehicleType, latitude, longitude, radiusMeters);
             
             return drivers;
@@ -162,42 +148,45 @@ public class BookingSearchService {
     }
     
     /**
-     * Gửi event cho driver để hiển thị popup nhận chuyến
+     * Single Kafka record for all drivers in this wave (DriverService expands to per-driver logic).
      */
-    private void sendBookingOfferToDriver(UUID bookingId, DriverLocationResponse driver, BookingSearchState searchState, boolean isExpansion) {
+    private void publishBookingOffersBatch(
+            UUID bookingId,
+            List<DriverLocationResponse> drivers,
+            BookingSearchState searchState,
+            boolean isExpansion) {
         try {
-            log.info("=== Sending booking offer to driver {} for bookingId={} (isExpansion={}) ===", driver.getDriverId(), bookingId, isExpansion);
-            log.info("Search state: fare={}, pickup={}, dropoff={}, distance={}km, duration={}min", 
-                searchState.getEstimatedFare(), searchState.getPickupAddress(), 
-                searchState.getDropoffAddress(), searchState.getEstimatedDistanceKm(), 
-                searchState.getEstimatedDurationMinutes());
-            
-            DriverBookingOfferEvent event = new DriverBookingOfferEvent(
-                bookingId,
-                UUID.fromString(driver.getDriverId()),
-                searchState.getPickupLatitude(),
-                searchState.getPickupLongitude(),
-                searchState.getDropoffLatitude(),
-                searchState.getDropoffLongitude(),
-                searchState.getVehicleType(),
-                searchState.getEstimatedDistanceKm(),
-                searchState.getEstimatedDurationMinutes(),
-                searchState.getEstimatedFare(),
-                searchState.getCurrency(),
-                searchState.getPickupAddress(),
-                searchState.getDropoffAddress()
-            );
-            
-            log.info("Event created: fare={}, pickup={}, dropoff={}", 
-                event.getEstimatedFare(), event.getPickupAddress(), event.getDropoffAddress());
-            
-            eventsProducer.publishDriverBookingOffer(event);
-            log.info("✓ Successfully published booking offer to driver {} for bookingId={}", 
-                driver.getDriverId(), bookingId);
+            List<UUID> driverIds = new ArrayList<>();
+            for (DriverLocationResponse d : drivers) {
+                try {
+                    driverIds.add(UUID.fromString(d.getDriverId()));
+                } catch (Exception ex) {
+                    log.warn("Skip invalid driverId={} for bookingId={}", d.getDriverId(), bookingId);
+                }
+            }
+            if (driverIds.isEmpty()) {
+                return;
+            }
+
+            DriverBookingOffersBatchEvent batch = DriverBookingOffersBatchEvent.fromBookingContext(
+                    bookingId,
+                    driverIds,
+                    searchState.getPickupLatitude(),
+                    searchState.getPickupLongitude(),
+                    searchState.getDropoffLatitude(),
+                    searchState.getDropoffLongitude(),
+                    searchState.getVehicleType(),
+                    searchState.getEstimatedDistanceKm(),
+                    searchState.getEstimatedDurationMinutes(),
+                    searchState.getEstimatedFare(),
+                    searchState.getCurrency() != null ? searchState.getCurrency() : "VND",
+                    searchState.getPickupAddress(),
+                    searchState.getDropoffAddress(),
+                    isExpansion);
+
+            eventsProducer.publishDriverBookingOffersBatch(batch);
         } catch (Exception e) {
-            log.error("✗ Error sending booking offer to driver {} for bookingId={}", 
-                driver.getDriverId(), bookingId, e);
-            e.printStackTrace();
+            log.error("Failed to publish batch offers for bookingId={}", bookingId, e);
         }
     }
     
@@ -232,7 +221,7 @@ public class BookingSearchService {
         // Use data from event first (if available), then try to fetch from BookingService as fallback
         if (event.getDropoffLatitude() != null && event.getDropoffLongitude() != null) {
             // Event contains full booking details
-            log.info("Using booking details from event for bookingId={}", event.getBookingId());
+            log.debug("Using booking details from event for bookingId={}", event.getBookingId());
             state.setDropoffLatitude(event.getDropoffLatitude());
             state.setDropoffLongitude(event.getDropoffLongitude());
             state.setEstimatedDistanceKm(event.getEstimatedDistanceKm());
@@ -242,17 +231,14 @@ public class BookingSearchService {
             state.setPickupAddress(event.getPickupAddress());
             state.setDropoffAddress(event.getDropoffAddress());
             
-            log.info("✓ Set search state from event: fare={}, pickup={}, dropoff={}, distance={}km, duration={}min", 
-                state.getEstimatedFare(), state.getPickupAddress(), state.getDropoffAddress(),
-                state.getEstimatedDistanceKm(), state.getEstimatedDurationMinutes());
+            log.debug("Set search state from event for bookingId={}", event.getBookingId());
         } else {
             // Fallback: Lấy thông tin booking từ BookingService (for backward compatibility)
-            log.info("Event missing booking details, fetching from BookingService for bookingId={}", event.getBookingId());
+            log.debug("Event missing booking details, fetching from BookingService for bookingId={}", event.getBookingId());
             try {
                 BookingInfoResponse bookingInfo = bookingServiceClient.getBookingInfo(event.getBookingId());
                 if (bookingInfo != null) {
-                    log.info("✓ Got booking info: fare={}, pickup={}, dropoff={}", 
-                        bookingInfo.getEstimatedFare(), bookingInfo.getPickupAddress(), bookingInfo.getDropoffAddress());
+                    log.debug("Got booking info from BookingService for bookingId={}", event.getBookingId());
                     
                     state.setDropoffLatitude(bookingInfo.getDropoffLatitude());
                     state.setDropoffLongitude(bookingInfo.getDropoffLongitude());
@@ -263,15 +249,13 @@ public class BookingSearchService {
                     state.setPickupAddress(bookingInfo.getPickupAddress());
                     state.setDropoffAddress(bookingInfo.getDropoffAddress());
                     
-                    log.info("✓ Set search state with: fare={}, pickup={}, dropoff={}", 
-                        state.getEstimatedFare(), state.getPickupAddress(), state.getDropoffAddress());
+                    log.debug("Set search state from BookingService for bookingId={}", event.getBookingId());
                 } else {
                     log.warn("✗ Could not fetch booking info for bookingId={}, bookingInfo is null", event.getBookingId());
                     state.setCurrency("VND");
                 }
             } catch (Exception e) {
-                log.error("✗ Error fetching booking info for bookingId={}", event.getBookingId(), e);
-                e.printStackTrace();
+                log.error("Error fetching booking info for bookingId={}", event.getBookingId(), e);
                 state.setCurrency("VND");
             }
         }
@@ -280,13 +264,15 @@ public class BookingSearchService {
     }
     
     /**
-     * Lưu trạng thái tìm kiếm vào Redis
+     * Lưu trạng thái tìm kiếm vào Redis và thêm bookingId vào active set
      */
     private void saveSearchState(BookingSearchState state) {
         try {
             String key = SEARCH_STATE_KEY_PREFIX + state.getBookingId();
             String stateJson = objectMapper.writeValueAsString(state);
             redisTemplate.opsForValue().set(key, stateJson, SEARCH_STATE_TTL_SECONDS, TimeUnit.SECONDS);
+            // Track in active set so scheduler can use SMEMBERS instead of KEYS *
+            redisTemplate.opsForSet().add(ACTIVE_BOOKINGS_SET_KEY, state.getBookingId().toString());
         } catch (Exception e) {
             log.error("Error saving search state for bookingId={}", state.getBookingId(), e);
         }
@@ -315,11 +301,27 @@ public class BookingSearchService {
         try {
             String key = SEARCH_STATE_KEY_PREFIX + bookingId;
             redisTemplate.delete(key);
+            // Remove from active set
+            redisTemplate.opsForSet().remove(ACTIVE_BOOKINGS_SET_KEY, bookingId.toString());
         } catch (Exception e) {
             log.error("Error removing search state for bookingId={}", bookingId, e);
         }
     }
     
+    /**
+     * Trả về danh sách bookingId đang active (dùng cho scheduler thay vì KEYS *).
+     * Dùng SMEMBERS trên một key cụ thể — không scan toàn keyspace như KEYS *
+     */
+    public java.util.Set<String> getActiveBookingIds() {
+        try {
+            java.util.Set<String> ids = redisTemplate.opsForSet().members(ACTIVE_BOOKINGS_SET_KEY);
+            return ids != null ? ids : java.util.Collections.emptySet();
+        } catch (Exception e) {
+            log.error("Error getting active booking IDs", e);
+            return java.util.Collections.emptySet();
+        }
+    }
+
     /**
      * Tăng bán kính tìm kiếm và tìm lại
      */
@@ -339,7 +341,7 @@ public class BookingSearchService {
         state.setSearchAttempts(state.getSearchAttempts() + 1);
         saveSearchState(state);
         
-        log.info("Expanding search radius for bookingId={} to {}m", bookingId, newRadius);
+        log.debug("Expanding search radius for bookingId={} to {}m", bookingId, newRadius);
         
         // Tìm lại tài xế với bán kính mới
         List<DriverLocationResponse> nearbyDrivers = findNearbyDrivers(
@@ -350,14 +352,11 @@ public class BookingSearchService {
         );
         
         if (!nearbyDrivers.isEmpty()) {
-            log.info("Found {} nearby drivers for bookingId={} with expanded radius {}m", 
-                nearbyDrivers.size(), bookingId, newRadius);
-            
-            for (DriverLocationResponse driver : nearbyDrivers) {
-                sendBookingOfferToDriver(bookingId, driver, state, true); // isExpansion = true
-            }
+            log.debug("Found {} nearby drivers for bookingId={} with expanded radius {}m",
+                    nearbyDrivers.size(), bookingId, newRadius);
+            publishBookingOffersBatch(bookingId, nearbyDrivers, state, true);
         } else {
-            log.info("No drivers found for bookingId={} with expanded radius {}m", bookingId, newRadius);
+            log.debug("No drivers found for bookingId={} with expanded radius {}m", bookingId, newRadius);
         }
     }
 }

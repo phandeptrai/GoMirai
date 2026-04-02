@@ -1,27 +1,22 @@
-# Stage 1: Build
+# syntax=docker/dockerfile:1
 FROM eclipse-temurin:21-jdk-alpine AS build
-WORKDIR /scan
+WORKDIR /workspace
+RUN apk add --no-cache maven
 
-# Copy common lib
-COPY gomirai-common-lib /scan/gomirai-common-lib
-COPY BookingService /scan/BookingService
+COPY gomirai-common-lib ./gomirai-common-lib
+WORKDIR /workspace/gomirai-common-lib
+RUN --mount=type=cache,target=/root/.m2 mvn clean install -DskipTests
 
-# Build Common Lib
-WORKDIR /scan/gomirai-common-lib
-RUN ../BookingService/mvnw clean install -DskipTests
+WORKDIR /workspace/BookingService
+COPY BookingService/pom.xml .
+RUN --mount=type=cache,target=/root/.m2 mvn dependency:go-offline -B
+COPY BookingService/src ./src
+RUN --mount=type=cache,target=/root/.m2 mvn clean package -DskipTests
 
-# Build Service
-WORKDIR /scan/BookingService
-RUN ./mvnw clean package -DskipTests
-
-# Stage 2: Runtime
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 RUN addgroup -S spring && adduser -S spring -G spring
 USER spring:spring
-
-COPY --from=build /scan/BookingService/target/*.jar app.jar
+COPY --from=build /workspace/BookingService/target/*.jar app.jar
 EXPOSE 8088
 ENTRYPOINT ["java", "-jar", "app.jar"]
-
-

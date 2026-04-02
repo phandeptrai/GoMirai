@@ -29,6 +29,9 @@ public class BookingServiceClient {
     @Value("${booking.service.url:http://BookingService}")
     private String bookingServiceUrl;
 
+    @Value("${security.internal.api-key}")
+    private String internalApiKey;
+
     /**
      * Lấy thông tin booking từ BookingService
      * Sử dụng internal endpoint /info không cần authentication
@@ -39,10 +42,11 @@ public class BookingServiceClient {
     public BookingInfoResponse getBookingInfo(UUID bookingId) {
         try {
             String url = bookingServiceUrl + "/api/booking/" + bookingId + "/info";
-            log.info("Fetching booking info from: {}", url);
+            log.debug("Fetching booking info for bookingId={}", bookingId);
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("X-Internal-Api-Key", internalApiKey);
             HttpEntity<Void> request = new HttpEntity<>(headers);
 
             ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
@@ -50,12 +54,10 @@ public class BookingServiceClient {
                     new ParameterizedTypeReference<Map<String, Object>>() {
                     });
 
-            log.info("BookingService response status: {}", response.getStatusCode());
-            log.info("BookingService response body: {}", response.getBody());
+            log.debug("BookingService response status={} for bookingId={}", response.getStatusCode(), bookingId);
 
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
                 Map<String, Object> body = response.getBody();
-                log.info("Response body keys: {}", body.keySet());
 
                 // ApiResponse structure: { success: true, message: "...", data: {...} }
                 Map<String, Object> data = (Map<String, Object>) body.get("data");
@@ -63,11 +65,8 @@ public class BookingServiceClient {
                 if (data == null) {
                     // Maybe response is direct BookingResponse, not wrapped
                     data = body;
-                    log.info("No 'data' wrapper, using body directly");
+                    log.trace("No 'data' wrapper for bookingId={}", bookingId);
                 }
-
-                log.info("Booking data extracted: {}", data);
-                log.info("Booking data keys: {}", data != null ? data.keySet() : "null");
 
                 if (data != null) {
                     BookingInfoResponse info = new BookingInfoResponse();
@@ -88,8 +87,6 @@ public class BookingServiceClient {
                                 ? dropoffLocation.get("fullAddress")
                                 : dropoffLocation.get("address"));
                         info.setDropoffAddress(dropoffAddr);
-                        log.info("Dropoff: lat={}, lng={}, address={}",
-                                info.getDropoffLatitude(), info.getDropoffLongitude(), info.getDropoffAddress());
                     }
 
                     // Extract pickup address (AddressSnapshot structure)
@@ -100,7 +97,6 @@ public class BookingServiceClient {
                                 ? pickupLocation.get("fullAddress")
                                 : pickupLocation.get("address"));
                         info.setPickupAddress(pickupAddr);
-                        log.info("Pickup address: {}", info.getPickupAddress());
                     }
 
                     // Extract price info (BookingPriceSnapshot structure)
@@ -120,7 +116,6 @@ public class BookingServiceClient {
                         info.setCurrency((String) (price.get("currency") != null
                                 ? price.get("currency")
                                 : "VND"));
-                        log.info("Price: fare={}, currency={}", info.getEstimatedFare(), info.getCurrency());
                     }
 
                     // Extract distance and duration
@@ -132,21 +127,17 @@ public class BookingServiceClient {
                     if (duration != null) {
                         info.setEstimatedDurationMinutes(((Number) duration).intValue());
                     }
-                    log.info("Distance: {} km, Duration: {} minutes",
-                            info.getEstimatedDistanceKm(), info.getEstimatedDurationMinutes());
 
-                    log.info("✓ Successfully extracted booking info for bookingId={}", bookingId);
+                    log.debug("Extracted booking info for bookingId={}", bookingId);
                     return info;
                 } else {
                     log.warn("Booking data is null for bookingId={}", bookingId);
                 }
             } else {
-                log.warn("Failed to get booking info: status={}, body={}",
-                        response.getStatusCode(), response.getBody());
+                log.warn("Failed to get booking info: bookingId={}, status={}", bookingId, response.getStatusCode());
             }
         } catch (Exception e) {
-            log.error("✗ Error fetching booking info for bookingId={}", bookingId, e);
-            e.printStackTrace();
+            log.error("Error fetching booking info for bookingId={}", bookingId, e);
         }
 
         return null;
@@ -178,6 +169,7 @@ public class BookingServiceClient {
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("X-Internal-Api-Key", internalApiKey);
             HttpEntity<Void> request = new HttpEntity<>(headers);
 
             ResponseEntity<Map<String, Object>> response = restTemplate.exchange(

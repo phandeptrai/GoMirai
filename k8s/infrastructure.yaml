@@ -1,26 +1,5 @@
-# =============================================================================
-# GoMirai Infrastructure - Kubernetes Manifests
-# Consul | Zookeeper | Kafka
-# =============================================================================
-# ⚠️  QUAN TRỌNG VỀ CONSUL TRONG KUBERNETES:
-#
-# Hệ thống GoMirai dùng Consul làm service registry cho microservice-to-microservice
-# calls. Các service dùng DiscoveryClient.getInstances("ServiceName") để lấy pod IP:port
-# rồi gọi HTTP trực tiếp (không qua K8s Service ClusterIP).
-#
-# Flow:
-#   BookingService → Consul → [MapService pod IP: 10.100.x.x:8086]
-#                   → HTTP GET http://10.100.x.x:8086/api/map/directions
-#
-# Điều này có nghĩa:
-#   1. Consul PHẢI ổn định (StatefulSet + PVC, không phải Deployment)
-#   2. Consul PHẢI health-check được pod IP (GKE cho phép: pod-to-pod trong namespace)
-#   3. Mỗi service pod PHẢI đăng ký đúng IP của nó (prefer-ip-address=true)
-#   4. K8s Service objects vẫn cần THIẾT cho:
-#      - Consul UI (consul-service:8500)
-#      - Kafka consumer connections (kafka-service:29092)
-#      - Initial service startup
-# =============================================================================
+# Infrastructure: Consul (discovery), Zookeeper, Kafka, Redis.
+# Services register pod IP with Consul; peers resolve via discovery. Consul = StatefulSet + PVC.
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CONSUL — StatefulSet (thay Deployment để giữ data qua pod restart)
@@ -35,7 +14,7 @@ metadata:
     app: consul
 spec:
   serviceName: consul-headless # ← headless service cho stable DNS: consul-0.consul-headless
-  replicas: 1 # Để 1 cho student project (HA cần 3, nhưng tốn tài nguyên)
+  replicas: 3 # Chế độ High Availability (HA)
   selector:
     matchLabels:
       app: consul
@@ -63,11 +42,14 @@ spec:
             - agent
             - -server
             - -ui
-            - -bootstrap-expect=1
+            - -bootstrap-expect=3
             - -client=0.0.0.0
-            - -data-dir=/consul/data # ← Lưu vào PVC để sống sót qua restart
+            - -data-dir=/consul/data
             - -bind=0.0.0.0
             - -advertise=$(POD_IP)
+            - -retry-join=consul-0.consul-headless.gomirai.svc.cluster.local
+            - -retry-join=consul-1.consul-headless.gomirai.svc.cluster.local
+            - -retry-join=consul-2.consul-headless.gomirai.svc.cluster.local
           env:
             - name: CONSUL_LOG_LEVEL
               value: "warn"
@@ -81,7 +63,7 @@ spec:
               cpu: "100m"
             limits:
               memory: "256Mi"
-              cpu: "200m"
+              cpu: "500m"
           readinessProbe:
             exec:
               command: ["consul", "members"]
@@ -410,3 +392,74 @@ spec:
     - name: external
       port: 9092
       targetPort: 9092
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# REDIS — TrackingService (geo / cache); tương đương container redis trong Docker
+# DNS trong cluster: redis-service:6379
+# ─────────────────────────────────────────────────────────────────────────────
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: gomirai
+  labels:
+    app: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7.2-alpine
+          ports:
+            - containerPort: 6379
+              name: redis
+          args:
+            - redis-server
+            - --appendonly
+            - "yes"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "512Mi"
+              cpu: "250m"
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+      volumes:
+        - name: redis-data
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: gomirai
+spec:
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: 6379
+      name: redis

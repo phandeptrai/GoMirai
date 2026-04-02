@@ -3,6 +3,10 @@ package com.gomirai.driver.controller;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -64,7 +68,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @Validated
 @RestController
-@RequestMapping("/api/drivers")
+@RequestMapping("/api/driver")
 public class DriverProfileController {
 
 	private final DriverProfileService driverProfileService;
@@ -138,6 +142,16 @@ public class DriverProfileController {
 		return ResponseEntity.ok(driverProfileService.getProfileByUserId(userId));
 	}
 
+	@PostMapping("/bulk")
+	public ResponseEntity<List<DriverProfileResponse>> getProfilesByUserIds(@RequestBody List<UUID> userIds) {
+		return ResponseEntity.ok(driverProfileService.getProfilesByUserIds(userIds));
+	}
+
+	@PostMapping("/bulk/by-driver-ids")
+	public ResponseEntity<List<DriverProfileResponse>> getProfilesByDriverIds(@RequestBody List<UUID> driverIds) {
+		return ResponseEntity.ok(driverProfileService.getProfilesByDriverIds(driverIds));
+	}
+
 	/**
 	 * Get driver public info (aggregated from DriverService + UserService)
 	 * Returns: vehicle info, rating, driver name, phone
@@ -153,9 +167,11 @@ public class DriverProfileController {
 
 	@GetMapping
 	@PreAuthorize("hasRole('ADMIN')")
-	public ResponseEntity<List<DriverProfileResponse>> listByStatus(
-			@RequestParam(value = "status", required = false) DriverAccountStatus status) {
-		return ResponseEntity.ok(driverProfileService.listByStatus(status));
+	public ResponseEntity<Slice<DriverProfileResponse>> listByStatus(
+			@RequestParam(value = "status", required = false) DriverAccountStatus status,
+			@PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
+		log.info("ADMIN listing drivers by status: {}. Page: {}, Size: {}", status, pageable.getPageNumber(), pageable.getPageSize());
+		return ResponseEntity.ok(driverProfileService.listByStatus(status, pageable));
 	}
 
 	@PatchMapping("/{driverId}/approve")
@@ -190,7 +206,8 @@ public class DriverProfileController {
 	@PreAuthorize("hasRole('DRIVER')")
 	public ResponseEntity<List<DriverBookingOfferResponse>> getBookingOffers() {
 		UUID userId = securityUtils.getCurrentUserId();
-		log.info("=== API: Getting booking offers for userId={} ===", userId);
+		// Polled frequently by driver app — keep DEBUG to avoid log spam
+		log.trace("GET /me/booking-offers userId={}", userId);
 
 		// Get driverId from DriverProfile using userId
 		UUID driverId = driverProfileService.getDriverIdByUserId(userId);
@@ -199,13 +216,8 @@ public class DriverProfileController {
 			return ResponseEntity.ok(List.of());
 		}
 
-		log.info("=== API: Found driverId={} for userId={} ===", driverId, userId);
 		List<DriverBookingOfferResponse> offers = driverBookingService.getActiveOffers(driverId);
-		log.info("=== API: Returning {} offers for driverId={} (userId={}) ===", offers.size(), driverId, userId);
-		if (offers.isEmpty()) {
-			log.warn("No offers found for driverId={} (userId={}) - check if events were received and saved", driverId,
-					userId);
-		}
+		log.trace("Returning {} offers for driverId={}", offers.size(), driverId);
 		return ResponseEntity.ok(offers);
 	}
 
@@ -217,7 +229,7 @@ public class DriverProfileController {
 	@PreAuthorize("hasRole('DRIVER')")
 	public ResponseEntity<Void> rejectBookingOffer(@PathVariable UUID bookingId) {
 		UUID userId = securityUtils.getCurrentUserId();
-		log.info("Driver userId={} rejecting booking offer for bookingId={}", userId, bookingId);
+		log.debug("Driver userId={} rejecting booking offer for bookingId={}", userId, bookingId);
 
 		// Get driverId from DriverProfile using userId
 		UUID driverId = driverProfileService.getDriverIdByUserId(userId);
@@ -227,7 +239,7 @@ public class DriverProfileController {
 		}
 
 		driverBookingService.deactivateOffer(bookingId, driverId);
-		log.info("Successfully deactivated offer for bookingId={}, driverId={}", bookingId, driverId);
+		log.debug("Deactivated offer for bookingId={}, driverId={}", bookingId, driverId);
 		return ResponseEntity.ok().build();
 	}
 }

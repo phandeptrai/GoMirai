@@ -1,10 +1,13 @@
 package com.gomirai.booking.config;
 
+import com.gomirai.common.security.GatewayDelegationAuthenticationFilter;
+import com.gomirai.common.security.InternalApiKeyFilter;
 import com.gomirai.common.security.JwtAuthenticationEntryPoint;
 import com.gomirai.common.security.JwtAuthenticationFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -25,6 +28,9 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtFilter;
     private final JwtAuthenticationEntryPoint authEntryPoint;
 
+    @Value("${security.internal.api-key}")
+    private String internalApiKey;
+
     @Value("${cors.allowed.origins}")
     private String allowedOrigins;
     @Value("${cors.allowed.methods}")
@@ -44,6 +50,16 @@ public class SecurityConfig {
     }
 
     @Bean
+    public InternalApiKeyFilter internalApiKeyFilter() {
+        return new InternalApiKeyFilter(internalApiKey);
+    }
+
+    @Bean
+    public GatewayDelegationAuthenticationFilter gatewayDelegationAuthenticationFilter() {
+        return new GatewayDelegationAuthenticationFilter(internalApiKey);
+    }
+
+    @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
@@ -52,18 +68,14 @@ public class SecurityConfig {
                 .exceptionHandling(ex -> ex.authenticationEntryPoint(authEntryPoint))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health").permitAll()
-                        // Allow WebSocket endpoints without authentication
                         .requestMatchers("/ws/**").permitAll()
-                        .requestMatchers(request -> {
-                            String path = request.getRequestURI();
-                            // Allow /api/booking/{bookingId}/info and /api/booking/{bookingId}/cancel-no-driver
-                            return path != null && (
-                                path.matches("/api/booking/[^/]+/info") ||
-                                path.matches("/api/booking/[^/]+/cancel-no-driver")
-                            );
-                        }).permitAll()
+                        // Internal endpoints: sử dụng hasAuthority để tránh nhầm lẫn prefix 'ROLE_'
+                        .requestMatchers(HttpMethod.GET,  "/api/booking/*/info").hasAuthority("ROLE_INTERNAL_SERVICE")
+                        .requestMatchers(HttpMethod.POST, "/api/booking/*/cancel-no-driver").hasAuthority("ROLE_INTERNAL_SERVICE")
                         .anyRequest().authenticated())
-                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(gatewayDelegationAuthenticationFilter(), JwtAuthenticationFilter.class)
+                .addFilterBefore(internalApiKeyFilter(), GatewayDelegationAuthenticationFilter.class);
 
         return http.build();
     }
@@ -83,5 +95,3 @@ public class SecurityConfig {
         return source;
     }
 }
-
-

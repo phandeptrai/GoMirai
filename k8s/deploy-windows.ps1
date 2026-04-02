@@ -43,19 +43,20 @@ if (Test-Path "k8s\create-secret.ps1") {
     Write-Host "⚠ Khong tim thay file k8s\create-secret.ps1" -ForegroundColor Red
 }
 
-Write-Host "-> Buoc 3: Deploy infrastructure (Consul, Zookeeper, Kafka)" -ForegroundColor Magenta
+Write-Host "-> Buoc 3: Deploy infrastructure (Consul, Zookeeper, Kafka, Redis)" -ForegroundColor Magenta
 kubectl apply -f k8s/infrastructure.yaml
 Write-Host "Dang cho Infrastructure khoi dong (co the ton vai phut)..."
 kubectl wait --for=condition=ready pod -l app=consul -n gomirai --timeout=300s
 kubectl wait --for=condition=ready pod -l app=zookeeper -n gomirai --timeout=300s
 kubectl wait --for=condition=ready pod -l app=kafka -n gomirai --timeout=300s
+kubectl wait --for=condition=ready pod -l app=redis -n gomirai --timeout=120s
 
 Write-Host "-> Buoc 4: Deploy ConfigMap" -ForegroundColor Magenta
 kubectl apply -f k8s/configmap.yaml
 
 Write-Host "-> Buoc 5: Deploy Microservices & API Gateway" -ForegroundColor Magenta
 kubectl apply -f k8s/services/
-Write-Host "V Hệ thống đang được cập nhật..." -ForegroundColor Green
+Write-Host "[OK] Da apply services." -ForegroundColor Green
 
 Write-Host "-> Buoc 7: Deploy Ingress (Nginx LoadBalancer)" -ForegroundColor Magenta
 kubectl apply -f k8s/nginx-ingress.yaml

@@ -1,422 +1,322 @@
 package com.gomirai.gateway.controller;
 
+import java.io.IOException;
 import java.net.URI;
+import java.time.Duration;
 import java.util.Collections;
+import java.util.UUID;
 
 import jakarta.servlet.http.HttpServletRequest;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.client.ServiceInstance;
 import org.springframework.cloud.client.loadbalancer.LoadBalancerClient;
-import org.springframework.http.HttpEntity;
+import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Controller;
 import org.springframework.util.AntPathMatcher;
-import org.springframework.util.StreamUtils;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
-import org.springframework.web.client.HttpStatusCodeException;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.reactive.function.BodyInserters;
+import org.springframework.web.reactive.function.client.WebClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.gomirai.common.enums.ServiceName;
+import com.gomirai.common.security.GatewayDelegationAuthenticationFilter;
+import com.gomirai.common.security.InternalApiKeyFilter;
+
 /**
- * ProxyController - Bộ điều phối chính của API Gateway.
- * 
- * === CHỨC NĂNG CHÍNH ===
- * Định tuyến TẤT CẢ API requests từ client đến các microservices phía sau.
- * Gateway là single entry point, client không gọi trực tiếp microservices.
- * 
- * === LUỒNG XỬ LÝ REQUEST ===
- * 1. Client gọi: GET /api/booking/me
- * 2. Gateway phân tích: serviceId = "booking", remaining = "/me"
- * 3. Service Discovery: Tìm BookingService từ Eureka
- * 4. Forward: http://BookingService:8082/api/booking/me
- * 5. Trả response về client
- * 
- * === MAPPING SERVICE NAME ===
- * Gateway tự động map serviceId sang tên service trong Eureka:
- * - "auth" → "AuthService" (hoặc "auth" nếu đăng ký trực tiếp)
- * - "users" → "UserService" (xử lý số nhiều → số ít)
- * - "booking" → "BookingService"
- * 
- * === WEBSOCKET PROXY ===
- * SockJS sử dụng HTTP transport, Gateway proxy các requests đến:
- * - /ws/notifications/** → NotificationService
- * 
- * === SECURITY ===
- * - Lọc headers nhạy cảm trước khi forward
- * - Log lỗi chi tiết nhưng trả về message generic cho client
- * - Forward JWT token trong header Authorization
+ * Reverse-proxy controller for the API Gateway.
+ *
+ * <h3>Routing algorithm</h3>
+ * <pre>
+ *   1. Extract {serviceId} from /api/{serviceId}/**
+ *   2. Resolve ServiceName via ServiceName.fromPath(serviceId)
+ *      – plural aliases (drivers → driver) are handled automatically
+ *   3. Choose a healthy instance from Consul via LoadBalancerClient
+ *   4. Reconstruct the downstream URL:
+ *        http://{host}:{port}{service.pathPrefix}/{remaining}
+ *   5. Forward with all security headers applied
+ * </pre>
+ *
+ * <h3>Performance: Non-blocking forward via WebClient</h3>
+ * <p>Calls {@code .block()} are intentionally avoided outside of error paths.
+ * The gateway runs on Spring MVC with Virtual Threads (spring.threads.virtual.enabled=true),
+ * so blocking on the Virtual Thread carrier is acceptable; however, to minimize
+ * thread-hold time we now use a dedicated connection pool (see {@link GatewayWebClientConfig})
+ * with controlled concurrency and timeouts instead of per-request connections.
+ *
+ * <h3>Single source of truth</h3>
+ * All service-name ↔ path-prefix mappings live exclusively in
+ * {@link ServiceName}. This controller contains NO hardcoded strings
+ * for individual services.
  */
 @Controller
 public class ProxyController {
 
-	private static final Logger logger = LoggerFactory.getLogger(ProxyController.class);
+    private static final Logger logger = LoggerFactory.getLogger(ProxyController.class);
 
-	private final LoadBalancerClient loadBalancerClient;
-	private final RestTemplate restTemplate;
+    /**
+     * Downstream timeout budget:
+     * – 25 s for normal requests
+     * – Large enough to cover slow Saga enrichment but short enough to surface real hung services.
+     */
+    private static final Duration PROXY_TIMEOUT = Duration.ofSeconds(25);
 
-	public ProxyController(LoadBalancerClient loadBalancerClient, RestTemplate restTemplate) {
-		this.loadBalancerClient = loadBalancerClient;
-		this.restTemplate = restTemplate;
-	}
+    private static final String GATEWAY_ROUTE_PATTERN = "/api/{serviceId}/**";
 
-	/**
-	 * Proxy tất cả API requests đến microservices.
-	 * 
-	 * URL Pattern: /api/{serviceId}/**
-	 * Ví dụ:
-	 * - /api/auth/login → AuthService
-	 * - /api/booking/me → BookingService
-	 * - /api/users/{userId} → UserService
-	 * 
-	 * @param request   HttpServletRequest từ client
-	 * @param serviceId ID của service (auth, booking, users, ...)
-	 * @return Response từ microservice (giữ nguyên status code và body)
-	 */
-	@RequestMapping(path = "/api/{serviceId}/**")
-	@ResponseBody
-	public ResponseEntity<byte[]> proxyApi(HttpServletRequest request, @PathVariable("serviceId") String serviceId)
-			throws Exception {
-		if (!StringUtils.hasText(serviceId)) {
-			return ResponseEntity.badRequest().body("Missing serviceId".getBytes());
-		}
+    private final LoadBalancerClient loadBalancerClient;
+    private final WebClient gatewayWebClient;
+    private final String internalApiKey;
 
-		// === BƯỚC 1: Service Discovery ===
-		// Chuyển đổi serviceId sang tên service thực trong Eureka
-		// VD: "booking" → "BookingService"
-		String actualServiceName = mapServiceName(serviceId);
-		ServiceInstance instance = loadBalancerClient.choose(actualServiceName);
-		if (instance == null) {
-			return ResponseEntity.status(404).body(("Service not found: " + actualServiceName).getBytes());
-		}
+    public ProxyController(
+            LoadBalancerClient loadBalancerClient,
+            WebClient gatewayWebClient,
+            @Value("${security.internal.api-key}") String internalApiKey) {
+        this.loadBalancerClient = loadBalancerClient;
+        this.gatewayWebClient   = gatewayWebClient;
+        this.internalApiKey     = internalApiKey;
+    }
 
-		// === BƯỚC 2: Xây dựng đường dẫn target ===
-		// Trích xuất phần path còn lại sau /api/{serviceId}
-		// VD: /api/booking/me → remaining = "/me"
-		String requestUri = request.getRequestURI();
-		String pattern = "/api/" + serviceId + "/**";
-		AntPathMatcher matcher = new AntPathMatcher();
-		String remaining = matcher.extractPathWithinPattern(pattern, requestUri);
-		String query = request.getQueryString();
-		String servicePathPrefix = getServicePathPrefix(serviceId);
+    // ──────────────────────────────────────────────────────────────────────────
+    // Main proxy handler
+    // ──────────────────────────────────────────────────────────────────────────
 
-		// Ghép path prefix của service + phần remaining
-		// VD: "/api/booking" + "/me" = "/api/booking/me"
-		String targetPath;
-		if (remaining == null || remaining.isEmpty()) {
-			targetPath = servicePathPrefix;
-		} else {
-			String normalizedRemaining = remaining.startsWith("/") ? remaining : "/" + remaining;
-			targetPath = servicePathPrefix + normalizedRemaining;
-		}
+    @RequestMapping(path = GATEWAY_ROUTE_PATTERN)
+    @ResponseBody
+    public ResponseEntity<byte[]> proxyApi(
+            HttpServletRequest request,
+            @PathVariable("serviceId") String serviceId) {
 
-		if (!targetPath.startsWith("/")) {
-			targetPath = "/" + targetPath;
-		}
+        // 1. Resolve service — handles plural aliases transparently
+        ServiceName service;
+        try {
+            service = ServiceName.fromPath(serviceId);
+        } catch (IllegalArgumentException e) {
+            logger.warn("Unknown service path segment '{}': {}", serviceId, e.getMessage());
+            return ResponseEntity.status(404)
+                    .body(("Unknown service: " + serviceId).getBytes());
+        }
 
-		// === BƯỚC 3: Tạo URL hoàn chỉnh đến service ===
-		// Format: http://{host}:{port}{path}?{query}
-		// VD: http://192.168.1.10:8082/api/booking/me?status=PENDING
-		String full = String.format("http://%s:%d%s%s%s",
-				instance.getHost(),
-				instance.getPort(),
-				targetPath,
-				(query != null && !query.isEmpty()) ? "?" : "",
-				(query != null) ? query : "");
-		URI target = URI.create(full);
+        try {
+            // 2. Consul service discovery
+            ServiceInstance instance = loadBalancerClient.choose(service.getConsulName());
+            if (instance == null) {
+                logger.warn("No healthy instance found in Consul for '{}'", service.getConsulName());
+                return ResponseEntity.status(503)
+                        .body(("Service unavailable: " + service.getConsulName()).getBytes());
+            }
 
-		// === BƯỚC 4: Chuẩn bị request để forward ===
-		// Lọc headers (loại bỏ headers của browser như Origin, Host)
-		// Copy body nguyên bản
-		HttpMethod method = HttpMethod.valueOf(request.getMethod());
-		HttpHeaders headers = filterRequestHeaders(request);
-		if (headers.getContentType() == null) {
-			headers.setContentType(MediaType.APPLICATION_JSON);
-		}
-		byte[] body = StreamUtils.copyToByteArray(request.getInputStream());
-		HttpEntity<byte[]> httpEntity = new HttpEntity<>(body, headers);
+            // 3. Build downstream URL
+            URI target = buildTargetUri(request, serviceId, service, instance);
 
-		// === BƯỚC 5: Forward request và trả response ===
-		try {
-			ResponseEntity<byte[]> resp = restTemplate.exchange(target, method, httpEntity, byte[].class);
-			// ✅ BẢO MẬT: Log không kèm URL đầy đủ để tránh lộ query params nhạy cảm
-			logger.info("Proxied {} {} to service {} (status: {})", method, requestUri, actualServiceName,
-					resp.getStatusCode());
-			HttpHeaders filteredHeaders = filterHeaders(resp.getHeaders());
-			return ResponseEntity.status(resp.getStatusCode()).headers(filteredHeaders).body(resp.getBody());
-		} catch (HttpStatusCodeException e) {
-			// Xử lý lỗi HTTP từ backend (4xx, 5xx)
-			// Giữ nguyên status code và body lỗi từ service
-			byte[] errorBody = e.getResponseBodyAsByteArray();
-			logger.warn("Backend error: {} {} -> {} (status: {})",
-					method, requestUri, target, e.getStatusCode());
-			logger.debug("Error body: {}", new String(errorBody));
+            // 4. Build headers — filter hop-by-hop then inject gateway delegation headers
+            HttpMethod method  = HttpMethod.valueOf(request.getMethod());
+            HttpHeaders headers = filterRequestHeaders(request);
+            applyGatewayDelegatedHeaders(headers);
 
-			HttpHeaders responseHeaders = filterHeaders(e.getResponseHeaders());
-			if (responseHeaders.getContentType() == null) {
-				responseHeaders.setContentType(MediaType.APPLICATION_JSON);
-			}
+            logger.info("Proxying {} {} → {} [{}]",
+                    method, request.getRequestURI(), target, service.getConsulName());
 
-			return ResponseEntity.status(e.getStatusCode())
-					.headers(responseHeaders)
-					.body(errorBody);
-		} catch (IllegalArgumentException e) {
-			// Service ID không hợp lệ hoặc không tìm thấy
-			logger.warn("Invalid request: {} {}", method, requestUri);
-			return ResponseEntity.status(400)
-					.contentType(MediaType.APPLICATION_JSON)
-					.body("{\"error\":\"Bad Request\",\"message\":\"Invalid service\"}".getBytes());
-		} catch (Exception e) {
-			// ✅ BẢO MẬT: Log chi tiết lỗi nhưng trả message generic cho client
-			// Tránh lộ thông tin internal error
-			logger.error("Gateway error: {} {} -> {}", method, requestUri, target, e);
-			return ResponseEntity.status(502)
-					.contentType(MediaType.APPLICATION_JSON)
-					.body("{\"error\":\"Bad Gateway\",\"message\":\"Service temporarily unavailable\"}".getBytes());
-		}
-	}
+            // 5. Forward — the WebClient keeps a warm connection pool (see GatewayWebClientConfig)
+            //    Virtual Threads make the .block() below cheap: the VT is parked (not a carrier thread).
+            return forwardWithWebClient(target, method, request, headers);
 
-	/**
-	 * Proxy WebSocket/SockJS requests đến backend services.
-	 * 
-	 * SockJS sử dụng HTTP làm transport (info, xhr_streaming, xhr_polling, etc.)
-	 * URL Pattern: /ws/{serviceId}/**
-	 * 
-	 * Ví dụ:
-	 * - /ws/notifications/info → NotificationService
-	 * - /ws/notifications/123/abc/xhr → NotificationService
-	 * 
-	 * LƯU Ý: WebSocket thực sự (ws://) không đi qua đây,
-	 * cần cấu hình riêng ở proxy layer (Nginx/LoadBalancer)
-	 */
-	@RequestMapping(path = "/ws/{serviceId}/**")
-	@ResponseBody
-	public ResponseEntity<byte[]> proxyWebSocket(HttpServletRequest request,
-			@PathVariable("serviceId") String serviceId) throws Exception {
-		if (!StringUtils.hasText(serviceId)) {
-			return ResponseEntity.badRequest().body("Missing serviceId".getBytes());
-		}
+        } catch (Exception e) {
+            logger.error("CRITICAL Proxy error for service '{}': {}",
+                    service.getConsulName(), e.getMessage(), e);
+            return ResponseEntity.status(502)
+                    .body("{\"error\":\"Bad Gateway\"}".getBytes());
+        }
+    }
 
-		String actualServiceName = mapServiceName(serviceId);
-		ServiceInstance instance = loadBalancerClient.choose(actualServiceName);
-		if (instance == null) {
-			logger.error("Service {} not found for WebSocket proxy", actualServiceName);
-			return ResponseEntity.status(503)
-					.body(("{\"error\":\"Service not available: " + actualServiceName + "\"}").getBytes());
-		}
+    // ──────────────────────────────────────────────────────────────────────────
+    // URL construction
+    // ──────────────────────────────────────────────────────────────────────────
 
-		String requestUri = request.getRequestURI();
-		String query = request.getQueryString();
+    /**
+     * Build the downstream URI.
+     *
+     * <p>The downstream path is:
+     * <pre>
+     *   {service.pathPrefix} + "/" + {remaining sub-path after /api/{serviceId}/}
+     * </pre>
+     *
+     * Examples:
+     * <pre>
+     *   /api/auth/login     → auth-service  → /auth/login
+     *   /api/driver/me      → driver-service → /api/driver/me
+     *   /api/drivers/apply  → driver-service → /api/driver/apply  (plural normalized)
+     * </pre>
+     */
+    private URI buildTargetUri(
+            HttpServletRequest request,
+            String rawServiceId,
+            ServiceName service,
+            ServiceInstance instance) {
 
-		// Forward giữ nguyên path đến backend service
-		// /ws/notifications/xxx → /ws/notifications/xxx trên NotificationService
-		String full = String.format("http://%s:%d%s%s%s",
-				instance.getHost(),
-				instance.getPort(),
-				requestUri,
-				(query != null && !query.isEmpty()) ? "?" : "",
-				(query != null) ? query : "");
-		URI target = URI.create(full);
+        String requestUri = request.getRequestURI();
+        AntPathMatcher matcher = new AntPathMatcher();
 
-		HttpMethod method = HttpMethod.valueOf(request.getMethod());
-		HttpHeaders headers = filterRequestHeaders(request);
+        // Extract the sub-path after /api/{rawServiceId}/
+        String remaining = matcher.extractPathWithinPattern(
+                "/api/" + rawServiceId + "/**", requestUri);
 
-		// SockJS có thể gửi nhiều loại Content-Type khác nhau
-		String contentType = request.getContentType();
-		if (contentType != null) {
-			headers.set("Content-Type", contentType);
-		}
+        // Combine pathPrefix + remaining
+        String targetPath = service.getPathPrefix();
+        if (remaining != null && !remaining.isEmpty()) {
+            targetPath = targetPath + (remaining.startsWith("/") ? remaining : "/" + remaining);
+        }
 
-		byte[] body = StreamUtils.copyToByteArray(request.getInputStream());
-		HttpEntity<byte[]> httpEntity = new HttpEntity<>(body, headers);
+        String query = request.getQueryString();
+        String url = String.format("http://%s:%d%s%s",
+                instance.getHost(),
+                instance.getPort(),
+                targetPath,
+                (query != null ? "?" + query : ""));
 
-		try {
-			logger.debug("Proxying WebSocket: {} {} -> {}", method, requestUri, actualServiceName);
-			ResponseEntity<byte[]> resp = restTemplate.exchange(target, method, httpEntity, byte[].class);
-			HttpHeaders filteredHeaders = filterHeaders(resp.getHeaders());
-			logger.info("WebSocket proxy: {} {} -> {} (status: {})",
-					method, requestUri, actualServiceName, resp.getStatusCode());
-			return ResponseEntity.status(resp.getStatusCode()).headers(filteredHeaders).body(resp.getBody());
-		} catch (HttpStatusCodeException e) {
-			byte[] errorBody = e.getResponseBodyAsByteArray();
-			logger.warn("WebSocket proxy error: {} {} -> {} (status: {})",
-					method, requestUri, actualServiceName, e.getStatusCode());
-			HttpHeaders responseHeaders = filterHeaders(e.getResponseHeaders());
-			return ResponseEntity.status(e.getStatusCode())
-					.headers(responseHeaders)
-					.body(errorBody);
-		} catch (IllegalArgumentException e) {
-			logger.warn("Invalid WebSocket request: {} {}", method, requestUri);
-			return ResponseEntity.status(400)
-					.body("{\"error\":\"Invalid service\"}".getBytes());
-		} catch (Exception e) {
-			logger.error("WebSocket proxy error: {} {} -> {}", method, requestUri, target, e);
-			return ResponseEntity.status(502)
-					.body("{\"error\":\"WebSocket proxy error\"}".getBytes());
-		}
-	}
+        return URI.create(url);
+    }
 
-	/**
-	 * Lọc headers từ request trước khi forward đến backend services.
-	 * 
-	 * Loại bỏ các headers không nên forward:
-	 * - Headers của browser (Origin, Referer, User-Agent) - liên quan CORS
-	 * - Headers kết nối (Connection, Keep-Alive) - được quản lý bởi HTTP client
-	 * - Content-Length - được tính tự động bởi RestTemplate
-	 * - Host - sẽ được set lại thành host của target service
-	 * 
-	 * Headers được giữ lại:
-	 * - Authorization (JWT token)
-	 * - Content-Type
-	 * - Accept
-	 * - Custom headers (X-*)
-	 */
-	private HttpHeaders filterRequestHeaders(HttpServletRequest request) {
-		HttpHeaders filtered = new HttpHeaders();
+    // ──────────────────────────────────────────────────────────────────────────
+    // HTTP forwarding  (Virtual-Thread-aware blocking)
+    // ──────────────────────────────────────────────────────────────────────────
 
-		// Danh sách headers cần loại bỏ khi forward đến backend
-		String[] skipHeaders = {
-				// Headers của browser (liên quan CORS)
-				"Origin", "Referer", "User-Agent",
-				// Headers kết nối (được quản lý bởi HTTP layer)
-				"Connection", "Keep-Alive", "Transfer-Encoding",
-				"Proxy-Authenticate", "Proxy-Authorization",
-				"TE", "Trailer", "Upgrade",
-				// Content-Length được tính tự động bởi RestTemplate
-				"Content-Length",
-				// Host sẽ được set thành target service host
-				"Host"
-		};
+    /**
+     * Forward the request and collect the downstream response.
+     *
+     * <p><b>Why .block() is safe here:</b>
+     * Spring MVC with {@code spring.threads.virtual.enabled=true} dispatches each
+     * request on a Virtual Thread. Calling {@code .block()} parks the VT (not a
+     * platform thread), so no OS thread is wasted while waiting for the downstream
+     * service. The downstream connection is reused from the warm Netty pool
+     * configured in {@link GatewayWebClientConfig}, eliminating TCP handshake
+     * overhead on the hot path.
+     *
+     * <p><b>Connection pool sizing (see GatewayWebClientConfig):</b>
+     * max=500 connections, pendingAcquireMaxCount=2_000 → can queue bursts of
+     * 2 000 concurrent requests without spinning up new OS threads.
+     */
+    private ResponseEntity<byte[]> forwardWithWebClient(
+            URI target,
+            HttpMethod method,
+            HttpServletRequest request,
+            HttpHeaders headers) throws IOException {
 
-		Collections.list(request.getHeaderNames()).forEach(headerName -> {
-			boolean shouldSkip = false;
-			for (String skipHeader : skipHeaders) {
-				if (skipHeader.equalsIgnoreCase(headerName)) {
-					shouldSkip = true;
-					break;
-				}
-			}
-			if (!shouldSkip) {
-				Collections.list(request.getHeaders(headerName))
-						.forEach(value -> filtered.add(headerName, value));
-			}
-		});
+        WebClient.RequestBodySpec spec = gatewayWebClient
+                .method(method)
+                .uri(target)
+                .headers(h -> h.addAll(headers));
 
-		return filtered;
-	}
+        WebClient.RequestHeadersSpec<?> specWithBody = spec;
+        if (method != HttpMethod.GET
+                && method != HttpMethod.HEAD
+                && method != HttpMethod.OPTIONS) {
 
-	/**
-	 * Lọc headers từ response trước khi trả về cho frontend.
-	 * 
-	 * Loại bỏ các headers kết nối/proxy không cần thiết.
-	 */
-	private HttpHeaders filterHeaders(HttpHeaders originalHeaders) {
-		HttpHeaders filtered = new HttpHeaders();
-		if (originalHeaders == null) {
-			return filtered;
-		}
+            long len = request.getContentLengthLong();
+            InputStreamResource resource = new InputStreamResource(request.getInputStream()) {
+                @Override
+                public long contentLength() { return len; }
+            };
+            specWithBody = spec.body(BodyInserters.fromResource(resource));
+        }
 
-		String[] skipHeaders = {
-				"Transfer-Encoding", "Connection", "Keep-Alive",
-				"Proxy-Authenticate", "Proxy-Authorization",
-				"TE", "Trailer", "Upgrade", "Content-Length"
-		};
+        return specWithBody.exchangeToMono(response -> {
+            HttpHeaders resHeaders = new HttpHeaders();
+            response.headers().asHttpHeaders().forEach((name, values) -> {
+                if (!name.equalsIgnoreCase("Transfer-Encoding")
+                        && !name.equalsIgnoreCase("Content-Length")) {
+                    resHeaders.addAll(name, values);
+                }
+            });
+            return response.bodyToMono(byte[].class)
+                    .map(body -> ResponseEntity.status(response.statusCode())
+                            .headers(resHeaders).body(body))
+                    .defaultIfEmpty(ResponseEntity.status(response.statusCode())
+                            .headers(resHeaders).build());
+        }).block(PROXY_TIMEOUT);       // VT-safe park — see Javadoc above
+    }
 
-		originalHeaders.forEach((key, value) -> {
-			boolean shouldSkip = false;
-			for (String skipHeader : skipHeaders) {
-				if (skipHeader.equalsIgnoreCase(key)) {
-					shouldSkip = true;
-					break;
-				}
-			}
-			if (!shouldSkip) {
-				filtered.put(key, value);
-			}
-		});
+    // ──────────────────────────────────────────────────────────────────────────
+    // Security header helpers
+    // ──────────────────────────────────────────────────────────────────────────
 
-		return filtered;
-	}
+    /**
+     * Inject gateway-delegation headers so downstream services can trust
+     * the authenticated userId and role without re-validating the JWT.
+     */
+    private void applyGatewayDelegatedHeaders(HttpHeaders headers) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) {
+            return;
+        }
 
-	/**
-	 * Chuyển đổi serviceId từ URL sang tên service trong Eureka.
-	 * 
-	 * Thử theo thứ tự:
-	 * 1. Exact match: "AuthService" → "AuthService"
-	 * 2. Chuẩn hóa: "auth" → "AuthService"
-	 * 3. Xử lý số nhiều: "users" → "UserService" (bỏ 's' cuối)
-	 * 4. Lowercase fallback: "authservice" → "authservice"
-	 * 
-	 * @param serviceId ID của service trong URL
-	 * @return Tên service đăng ký trong Eureka
-	 * @throws IllegalArgumentException nếu không tìm thấy service
-	 */
-	private String mapServiceName(String serviceId) {
-		if (serviceId == null || serviceId.isEmpty()) {
-			throw new IllegalArgumentException("Service ID cannot be empty");
-		}
+        headers.set(InternalApiKeyFilter.INTERNAL_API_KEY_HEADER, internalApiKey);
 
-		// 1. Thử exact match trước
-		if (loadBalancerClient.choose(serviceId) != null) {
-			return serviceId;
-		}
+        if (auth.getPrincipal() instanceof UUID userId) {
+            headers.set(GatewayDelegationAuthenticationFilter.GATEWAY_USER_ID_HEADER,
+                    userId.toString());
 
-		String normalized = serviceId.toLowerCase();
-		String capitalized = StringUtils.capitalize(normalized);
+            // Pick highest-priority role: ADMIN > DRIVER > CUSTOMER
+            auth.getAuthorities().stream()
+                    .map(a -> a.getAuthority())
+                    .filter(a -> a.startsWith("ROLE_"))
+                    .sorted((a1, a2) -> {
+                        if ("ROLE_ADMIN".equals(a1))  return -1;
+                        if ("ROLE_ADMIN".equals(a2))  return 1;
+                        if ("ROLE_DRIVER".equals(a1)) return -1;
+                        if ("ROLE_DRIVER".equals(a2)) return 1;
+                        return 0;
+                    })
+                    .findFirst()
+                    .map(role -> role.startsWith("ROLE_") ? role.substring(5) : role)
+                    .ifPresent(roleName ->
+                            headers.set(GatewayDelegationAuthenticationFilter.GATEWAY_USER_ROLE_HEADER,
+                                    roleName));
+        }
 
-		// 2. Thử format chuẩn: "Name" + "Service" (VD: "auth" → "AuthService")
-		String standardName = capitalized + "Service";
-		if (loadBalancerClient.choose(standardName) != null) {
-			return standardName;
-		}
+        // Strip raw JWT — downstream services MUST NOT re-validate it
+        headers.remove(HttpHeaders.AUTHORIZATION);
+    }
 
-		// 3. Xử lý số nhiều: "users" → "UserService"
-		if (normalized.endsWith("s")) {
-			String singular = normalized.substring(0, normalized.length() - 1);
-			String capitalizedSingular = StringUtils.capitalize(singular);
-			String singularName = capitalizedSingular + "Service";
-			if (loadBalancerClient.choose(singularName) != null) {
-				return singularName;
-			}
-		}
+    /**
+     * Remove hop-by-hop headers and any headers that must be controlled
+     * exclusively by the gateway security layer.
+     */
+    private HttpHeaders filterRequestHeaders(HttpServletRequest request) {
+        HttpHeaders filtered = new HttpHeaders();
+        Collections.list(request.getHeaderNames()).forEach(name -> {
+            if (!isHopByHop(name)) {
+                Collections.list(request.getHeaders(name))
+                           .forEach(val -> filtered.add(name, val));
+            }
+        });
+        return filtered;
+    }
 
-		// 4. Fallback: thử normalized (lowercase) match
-		if (loadBalancerClient.choose(normalized) != null) {
-			return normalized;
-		}
-
-		throw new IllegalArgumentException("Unknown service: " + serviceId);
-	}
-
-	/**
-	 * Lấy đường dẫn prefix của service.
-	 * 
-	 * Mỗi service có path prefix riêng:
-	 * - AuthService: /auth (legacy, không có /api)
-	 * - BookingService: /api/booking
-	 * - UserService: /api/user
-	 * 
-	 * @param serviceId ID của service
-	 * @return Path prefix của service
-	 */
-	private String getServicePathPrefix(String serviceId) {
-		if (serviceId == null || serviceId.isEmpty()) {
-			return "";
-		}
-
-		// Xử lý riêng cho auth service (legacy path)
-		if (serviceId.equalsIgnoreCase("auth")) {
-			return "/auth";
-		}
-
-		// Pattern chuẩn: /api/{serviceId}
-		// VD: serviceId="booking" → /api/booking
-		return "/api/" + serviceId.toLowerCase();
-	}
+    private boolean isHopByHop(String name) {
+        String lower = name.toLowerCase();
+        return lower.equals("connection")
+            || lower.equals("keep-alive")
+            || lower.equals("proxy-authenticate")
+            || lower.equals("proxy-authorization")
+            || lower.equals("te")
+            || lower.equals("trailer")
+            || lower.equals("transfer-encoding")
+            || lower.equals("upgrade")
+            || lower.equals("host")
+            || lower.equals("content-length")
+            || lower.equals("origin")
+            || lower.equals("referer")
+            // Strip security headers that the client must never spoof
+            || lower.equalsIgnoreCase(InternalApiKeyFilter.INTERNAL_API_KEY_HEADER)
+            || lower.equalsIgnoreCase(GatewayDelegationAuthenticationFilter.GATEWAY_USER_ID_HEADER)
+            || lower.equalsIgnoreCase(GatewayDelegationAuthenticationFilter.GATEWAY_USER_ROLE_HEADER);
+    }
 }

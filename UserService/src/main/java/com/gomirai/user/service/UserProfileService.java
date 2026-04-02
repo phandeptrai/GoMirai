@@ -121,6 +121,7 @@ public class UserProfileService {
         return mapToResponse(saved);
     }
 
+    @Transactional(readOnly = true)
     public UserProfileResponse getUserProfile(UUID userId) {
         return userProfileRepository.findByUserId(userId)
                 .map(this::mapToResponse)

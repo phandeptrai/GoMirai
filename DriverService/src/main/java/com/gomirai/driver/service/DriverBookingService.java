@@ -6,6 +6,7 @@ import com.gomirai.driver.dto.response.DriverBookingOfferResponse;
 import com.gomirai.common.dto.event.BookingSearchDriversEvent;
 import com.gomirai.common.dto.event.DriverAcceptedEvent;
 import com.gomirai.common.dto.event.DriverBookingOfferEvent;
+import com.gomirai.common.dto.event.DriverBookingOffersBatchEvent;
 import com.gomirai.driver.messaging.DriverBookingEventsProducer;
 import com.gomirai.driver.model.DriverBookingOffer;
 import com.gomirai.driver.model.DriverProfile;
@@ -44,13 +45,16 @@ public class DriverBookingService {
     
     @Value("${booking.notification.max-drivers:10}")
     private int maxDriversToNotify;
+
+    @Value("${security.internal.api-key}")
+    private String internalApiKey;
     
     /**
      * Handle booking search drivers event
      * Finds nearby drivers and sends notifications to all eligible drivers
      */
     public void handleBookingSearchDrivers(BookingSearchDriversEvent event) {
-        log.info("Processing BookingSearchDriversEvent: bookingId={}, vehicleType={}, radius={}m", 
+        log.debug("Processing BookingSearchDriversEvent: bookingId={}, vehicleType={}, radius={}m",
             event.getBookingId(), event.getVehicleType(), event.getRadiusMeters());
         
         try {
@@ -83,8 +87,7 @@ public class DriverBookingService {
             // 4. Send notifications to all eligible drivers
             // In a real implementation, this would send push notifications or WebSocket messages
             // For now, we'll just log it - the actual notification will be handled by frontend polling/WebSocket
-            log.info("Notifying {} drivers about bookingId={}: {}", 
-                driversToNotify.size(), event.getBookingId(), driversToNotify);
+            log.debug("Notifying {} drivers about bookingId={}", driversToNotify.size(), event.getBookingId());
             
             // TODO: Implement actual notification mechanism (WebSocket, Push Notification, etc.)
             // For now, drivers will receive booking info via polling or WebSocket connection
@@ -100,7 +103,7 @@ public class DriverBookingService {
      * Publishes DriverAcceptedEvent to Kafka
      */
     public void acceptBooking(UUID bookingId, UUID driverId) {
-        log.info("Driver {} accepting booking {}", driverId, bookingId);
+        log.debug("Driver {} accepting booking {}", driverId, bookingId);
         
         // Validate driver is available
         DriverProfile driver = driverProfileRepository.findById(driverId)
@@ -120,7 +123,7 @@ public class DriverBookingService {
         DriverAcceptedEvent event = new DriverAcceptedEvent(bookingId, driverId, null);
         eventsProducer.publishDriverAccepted(event);
         
-        log.info("Published DriverAcceptedEvent for bookingId={}, driverId={}", bookingId, driverId);
+        log.debug("Published DriverAcceptedEvent for bookingId={}, driverId={}", bookingId, driverId);
     }
     
     /**
@@ -141,6 +144,7 @@ public class DriverBookingService {
             
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("X-Internal-Api-Key", internalApiKey);
             HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
             
             // Call TrackingService
@@ -195,29 +199,21 @@ public class DriverBookingService {
      * PUSH WEBSOCKET DIRECTLY - HARD REALTIME
      */
     public void handleDriverBookingOffer(DriverBookingOfferEvent event) {
-        log.info("=== Received DriverBookingOfferEvent ===");
-        log.info("bookingId={}, driverId={}, vehicleType={}", 
-            event.getBookingId(), event.getDriverId(), event.getVehicleType());
-        log.info("fare={}, currency={}, distance={}km, duration={}min", 
-            event.getEstimatedFare(), event.getCurrency(), 
-            event.getEstimatedDistanceKm(), event.getEstimatedDurationMinutes());
-        log.info("pickup=({},{}), address={}", 
-            event.getPickupLatitude(), event.getPickupLongitude(), event.getPickupAddress());
-        log.info("dropoff=({},{}), address={}", 
-            event.getDropoffLatitude(), event.getDropoffLongitude(), event.getDropoffAddress());
-        
+        log.debug("DriverBookingOffer bookingId={}, driverId={}", event.getBookingId(), event.getDriverId());
+
         // Validate driver exists and is online
         DriverProfile driver = driverProfileRepository.findById(event.getDriverId())
             .orElse(null);
         
         if (driver == null) {
-            log.error("Driver {} not found for booking offer {}", event.getDriverId(), event.getBookingId());
+            // Common when Redis GEO still lists a driverId but profile was removed or GEO/metadata stale
+            log.debug("Skip offer: no DriverProfile for driverId={}, bookingId={}", event.getDriverId(),
+                    event.getBookingId());
             return;
         }
         
-        log.info("Driver found: driverId={}, userId={}, status={}, accountStatus={}", 
-            driver.getDriverId(), driver.getUserId(), driver.getAvailabilityStatus(), driver.getAccountStatus());
-        
+        log.trace("Driver profile: driverId={}, availability={}", driver.getDriverId(), driver.getAvailabilityStatus());
+
         if (driver.getAvailabilityStatus() != DriverAvailabilityStatus.ONLINE) {
             log.warn("Driver {} is not online (status={}), ignoring booking offer {}", 
                 event.getDriverId(), driver.getAvailabilityStatus(), event.getBookingId());
@@ -230,7 +226,7 @@ public class DriverBookingService {
             .orElse(null);
         
         if (existingOffer != null) {
-            log.info("Offer already exists for bookingId={}, driverId={}, skipping", 
+            log.debug("Offer already exists for bookingId={}, driverId={}, skipping",
                 event.getBookingId(), event.getDriverId());
             return;
         }
@@ -249,65 +245,73 @@ public class DriverBookingService {
         offer.setPickupAddress(event.getPickupAddress());
         offer.setDropoffAddress(event.getDropoffAddress());
         
-        log.info("Saving offer: fare={}, pickup={}, dropoff={}, distance={}km, duration={}min", 
-            offer.getEstimatedFare(), offer.getPickupAddress(), offer.getDropoffAddress(),
-            offer.getEstimatedDistanceKm(), offer.getEstimatedDurationMinutes());
-        
         try {
             offerRepository.save(offer);
-            log.info("✓ Successfully saved booking offer for driver {} - bookingId={}, fare={}, expiresAt={}", 
-                event.getDriverId(), event.getBookingId(), offer.getEstimatedFare(), offer.getExpiresAt());
-            
+            log.debug("Saved booking offer driverId={}, bookingId={}", event.getDriverId(), event.getBookingId());
+
             // Set userId and publish event for NotificationService to push WebSocket
             event.setUserId(driver.getUserId());
             eventsProducer.publishDriverOfferNotification(event);
-            log.info("Published offer to notification topic for userId={}, bookingId={}", 
-                driver.getUserId(), event.getBookingId());
-            
+            log.debug("Published offer notification bookingId={}, userId={}", event.getBookingId(), driver.getUserId());
+
         } catch (Exception e) {
-            log.error("✗ Failed to save booking offer for driver {} - bookingId={}", 
+            log.error("Failed to save booking offer for driver {} - bookingId={}",
                 event.getDriverId(), event.getBookingId(), e);
-            e.printStackTrace();
             throw e;
         }
     }
-    
+
+    /**
+     * Expand batch from Tracking into per-driver handling (reuses persistence + notification pipeline).
+     */
+    public void handleDriverBookingOffersBatch(DriverBookingOffersBatchEvent batch) {
+        if (batch.getDriverIds() == null || batch.getDriverIds().isEmpty()) {
+            return;
+        }
+        for (UUID driverId : batch.getDriverIds()) {
+            DriverBookingOfferEvent event = new DriverBookingOfferEvent(
+                    batch.getBookingId(),
+                    driverId,
+                    batch.getPickupLatitude(),
+                    batch.getPickupLongitude(),
+                    batch.getDropoffLatitude(),
+                    batch.getDropoffLongitude(),
+                    batch.getVehicleType(),
+                    batch.getEstimatedDistanceKm(),
+                    batch.getEstimatedDurationMinutes(),
+                    batch.getEstimatedFare(),
+                    batch.getCurrency(),
+                    batch.getPickupAddress(),
+                    batch.getDropoffAddress());
+            try {
+                handleDriverBookingOffer(event);
+            } catch (Exception e) {
+                log.error("Batch member failed bookingId={}, driverId={}", batch.getBookingId(), driverId, e);
+            }
+        }
+    }
+
     /**
      * Get active booking offers for current driver
      */
     public List<DriverBookingOfferResponse> getActiveOffers(UUID driverId) {
-        log.info("=== Getting active offers for driverId={} ===", driverId);
-        
         List<DriverBookingOffer> offers = offerRepository
             .findByDriverIdAndIsActiveTrueOrderByOfferedAtDesc(driverId);
-        
-        log.info("Found {} total offers in DB for driverId={}", offers.size(), driverId);
-        
+
         LocalDateTime now = LocalDateTime.now();
-        log.info("Current time: {}", now);
-        
+        log.trace("getActiveOffers driverId={}, rawCount={}", driverId, offers.size());
+
         List<DriverBookingOfferResponse> activeOffers = offers.stream()
             .filter(offer -> {
                 boolean notExpired = offer.getExpiresAt().isAfter(now);
-                log.info("Offer {}: expiresAt={}, notExpired={}, isActive={}", 
-                    offer.getBookingId(), offer.getExpiresAt(), notExpired, offer.getIsActive());
                 if (!notExpired) {
-                    log.warn("Offer {} expired for driverId={} (expiresAt={}, now={})", 
-                        offer.getBookingId(), driverId, offer.getExpiresAt(), now);
+                    log.debug("Offer {} expired for driverId={}", offer.getBookingId(), driverId);
                 }
                 return notExpired;
             })
             .map(offer -> {
                 long timeLeftSeconds = Duration.between(now, offer.getExpiresAt()).getSeconds();
-                
-                log.info("Active offer: bookingId={}, driverId={}, vehicleType={}, timeLeft={}s", 
-                    offer.getBookingId(), driverId, offer.getVehicleType(), timeLeftSeconds);
-                log.info("  -> fare={}, currency={}, distance={}km, duration={}min", 
-                    offer.getEstimatedFare(), offer.getCurrency(), 
-                    offer.getEstimatedDistanceKm(), offer.getEstimatedDurationMinutes());
-                log.info("  -> pickup={}, dropoff={}", 
-                    offer.getPickupAddress(), offer.getDropoffAddress());
-                
+
                 return DriverBookingOfferResponse.builder()
                     .bookingId(offer.getBookingId())
                     .pickupLatitude(offer.getPickupLatitude())
@@ -326,8 +330,8 @@ public class DriverBookingService {
                     .build();
             })
             .collect(Collectors.toList());
-        
-        log.info("=== Returning {} active offers for driverId={} ===", activeOffers.size(), driverId);
+
+        log.debug("Returning {} active offers for driverId={}", activeOffers.size(), driverId);
         return activeOffers;
     }
     

@@ -1,13 +1,11 @@
 package com.gomirai.tracking.scheduler;
 
-import com.gomirai.tracking.client.BookingServiceClient;
 import com.gomirai.tracking.model.BookingSearchState;
 import com.gomirai.tracking.service.BookingCancellationService;
 import com.gomirai.tracking.service.BookingSearchService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -28,10 +26,6 @@ public class BookingSearchScheduler {
     
     private final BookingSearchService bookingSearchService;
     private final BookingCancellationService bookingCancellationService;
-    private final RedisTemplate<String, String> redisTemplate;
-    private final BookingServiceClient bookingServiceClient;
-    
-    private static final String SEARCH_STATE_KEY_PREFIX = "booking:search:";
     
     @Value("${booking.search.expand-interval-minutes:5}")
     private int expandIntervalMinutes;
@@ -40,24 +34,24 @@ public class BookingSearchScheduler {
     private int maxSearchDurationMinutes;
     
     /**
-     * Chạy mỗi 1 phút để kiểm tra và tăng bán kính tìm kiếm
+     * Chạy mỗi 1 phút để kiểm tra và tăng bán kính tìm kiếm.
+     * FIX: Dùng SMEMBERS trên Redis Set thay vì KEYS * để tránh block Redis.
      */
     @Scheduled(fixedDelayString = "${booking.search.check-interval-ms:60000}", initialDelay = 60000)
     public void expandSearchRadiusForPendingBookings() {
         try {
-            // Lấy tất cả các keys của booking search state
-            Set<String> keys = redisTemplate.keys(SEARCH_STATE_KEY_PREFIX + "*");
-            if (keys == null || keys.isEmpty()) {
+            // FIX: getActiveBookingIds() dùng SMEMBERS thay vì KEYS *
+            Set<String> activeIds = bookingSearchService.getActiveBookingIds();
+            if (activeIds.isEmpty()) {
                 return;
             }
             
-            for (String key : keys) {
+            for (String bookingIdStr : activeIds) {
                 try {
-                    String bookingIdStr = key.substring(SEARCH_STATE_KEY_PREFIX.length());
                     UUID bookingId = UUID.fromString(bookingIdStr);
                     checkAndExpandRadius(bookingId);
                 } catch (Exception e) {
-                    log.warn("Error processing booking search key: {}", key, e);
+                    log.warn("Error processing booking search for id: {}", bookingIdStr, e);
                 }
             }
         } catch (Exception e) {
@@ -66,20 +60,20 @@ public class BookingSearchScheduler {
     }
     
     /**
-     * Chạy mỗi 1 phút để hủy các booking không có tài xế nhận trong 15 phút
+     * Chạy mỗi 1 phút để hủy các booking không có tài xế nhận trong thời gian tối đa.
+     * FIX: Dùng SMEMBERS trên Redis Set thay vì KEYS * để tránh block Redis.
      */
     @Scheduled(fixedDelayString = "${booking.search.check-interval-ms:60000}", initialDelay = 120000)
     public void cancelExpiredBookings() {
         try {
-            // Lấy tất cả các keys của booking search state
-            Set<String> keys = redisTemplate.keys(SEARCH_STATE_KEY_PREFIX + "*");
-            if (keys == null || keys.isEmpty()) {
+            // FIX: getActiveBookingIds() dùng SMEMBERS thay vì KEYS *
+            Set<String> activeIds = bookingSearchService.getActiveBookingIds();
+            if (activeIds.isEmpty()) {
                 return;
             }
             
-            for (String key : keys) {
+            for (String bookingIdStr : activeIds) {
                 try {
-                    String bookingIdStr = key.substring(SEARCH_STATE_KEY_PREFIX.length());
                     UUID bookingId = UUID.fromString(bookingIdStr);
                     
                     if (shouldCancelBooking(bookingId)) {
@@ -89,7 +83,7 @@ public class BookingSearchScheduler {
                         bookingSearchService.removeSearchState(bookingId);
                     }
                 } catch (Exception e) {
-                    log.warn("Error processing booking cancellation for key: {}", key, e);
+                    log.warn("Error processing booking cancellation for id: {}", bookingIdStr, e);
                 }
             }
         } catch (Exception e) {
@@ -98,19 +92,17 @@ public class BookingSearchScheduler {
     }
     
     /**
-     * Kiểm tra và tăng bán kính cho một booking cụ thể
-     * ONLY expand nếu booking vẫn ở PENDING status
+     * Kiểm tra và tăng bán kính cho một booking cụ thể.
+     * FIX: Bỏ isBookingStillPending() HTTP call.
+     * Lý do:
+     *  - BookingAssignedConsumer và BookingCanceledConsumer đã tự remove search state qua Kafka.
+     *  - Nếu search state còn tồn tại → booking chưa được assign/cancel → safe to expand.
+     *  - BookingService có guard status check nên duplicate offers không gây double-assign.
      */
     private void checkAndExpandRadius(UUID bookingId) {
         BookingSearchState state = bookingSearchService.getSearchState(bookingId);
         if (state == null || !state.getIsActive()) {
-            return;
-        }
-        
-        // ✅ CHECK: Booking phải vẫn ở PENDING status
-        boolean isPending = bookingServiceClient.isBookingStillPending(bookingId);
-        if (!isPending) {
-            log.info("Booking {} is no longer PENDING, stopping search radius expansion", bookingId);
+            // State gone → already assigned or canceled, clean up active set
             bookingSearchService.removeSearchState(bookingId);
             return;
         }
@@ -118,9 +110,8 @@ public class BookingSearchScheduler {
         LocalDateTime now = LocalDateTime.now();
         Duration timeSinceLastSearch = Duration.between(state.getLastSearchTime(), now);
         
-        // Nếu đã qua expandIntervalMinutes kể từ lần tìm kiếm cuối và vẫn PENDING
         if (timeSinceLastSearch.toMinutes() >= expandIntervalMinutes) {
-            log.info("Expanding search radius for booking {} (still PENDING)", bookingId);
+            log.info("Expanding search radius for booking {}", bookingId);
             bookingSearchService.expandSearchRadius(bookingId);
         }
     }

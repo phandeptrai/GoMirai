@@ -1,23 +1,22 @@
+# syntax=docker/dockerfile:1
 FROM eclipse-temurin:21-jdk-alpine AS build
 WORKDIR /workspace
+RUN apk add --no-cache maven
 
-# Build common library first so DriverService can reuse it
 COPY gomirai-common-lib ./gomirai-common-lib
 WORKDIR /workspace/gomirai-common-lib
-RUN apk add --no-cache maven && mvn clean install -DskipTests
+RUN --mount=type=cache,target=/root/.m2 mvn clean install -DskipTests
 
-# Build DriverService
 WORKDIR /workspace/DriverService
 COPY DriverService/pom.xml .
-COPY DriverService/mvnw .
-COPY DriverService/.mvn ./.mvn
-
+RUN --mount=type=cache,target=/root/.m2 mvn dependency:go-offline -B
 COPY DriverService/src ./src
-RUN ./mvnw clean package -DskipTests
+RUN --mount=type=cache,target=/root/.m2 mvn clean package -DskipTests
 
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
+RUN addgroup -S spring && adduser -S spring -G spring
+USER spring:spring
 COPY --from=build /workspace/DriverService/target/*.jar app.jar
 EXPOSE 8084
 ENTRYPOINT ["java", "-jar", "app.jar"]
-

@@ -5,6 +5,7 @@ import com.gomirai.pricing.dto.request.*;
 import com.gomirai.pricing.dto.response.PricingResponse;
 import com.gomirai.pricing.exception.PricingErrorCode;
 import com.gomirai.pricing.model.PricingRule;
+import com.gomirai.pricing.cache.PricingRuleCacheService;
 import com.gomirai.pricing.repository.PricingRuleRepository;
 import org.springframework.stereotype.Service;
 
@@ -14,9 +15,11 @@ import java.util.List;
 public class PricingService {
 
     private final PricingRuleRepository repository;
+    private final PricingRuleCacheService ruleCache;
 
-    public PricingService(PricingRuleRepository repository) {
+    public PricingService(PricingRuleRepository repository, PricingRuleCacheService ruleCache) {
         this.repository = repository;
+        this.ruleCache = ruleCache;
     }
 
     public PricingResponse estimate(EstimateRequest req) {
@@ -44,8 +47,7 @@ public class PricingService {
     }
 
     private PricingRule findActiveRule(String vehicleType, String region) {
-        return repository
-                .findFirstByVehicleTypeAndRegionAndActiveTrueOrderBySurgeMultiplierDesc(vehicleType, region)
+        return ruleCache.findActiveRule(vehicleType, region)
                 .orElseThrow(() -> new BusinessException(PricingErrorCode.PRICING_RULE_NOT_FOUND));
     }
 
@@ -85,7 +87,11 @@ public class PricingService {
             throw new BusinessException("surgeMultiplier must be >= 1.0");
         if (rule.getBaseFare() <= 0 || rule.getPerKmRate() <= 0 || rule.getPerMinuteRate() <= 0)
             throw new BusinessException("Rates must be positive");
-        return repository.save(rule);
+        PricingRule saved = repository.save(rule);
+        if (saved.getVehicleType() != null && saved.getRegion() != null) {
+            ruleCache.invalidate(saved.getVehicleType(), saved.getRegion());
+        }
+        return saved;
     }
 
     public List<PricingRule> findAll() {
