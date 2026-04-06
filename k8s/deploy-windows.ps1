@@ -14,16 +14,21 @@ if ($createCluster -eq 'y') {
     Write-Host "-> Dang tao cluster (co the mat 3-5 phut)..." -ForegroundColor Magenta
     gcloud container clusters create $CLUSTER_NAME `
       --zone $ZONE `
-      --num-nodes 3 `
-      --machine-type e2-standard-4 `
-      --disk-size 50 `
+      --num-nodes 2 `
+      --machine-type n2-standard-4 `
+      --disk-size 35 `
       --enable-autoscaling `
-      --min-nodes 3 `
+      --min-nodes 2 `
       --max-nodes 5 `
+      --enable-ip-alias `
       --enable-autorepair `
       --enable-autoupgrade `
       --project $PROJECT_ID
 }
+
+# --- [HE THONG DA CHUYEN SANG PUBLIC CLUSTER] ---
+# Bo qua cac buoc cau hinh Cloud NAT va Authorized Networks de don gian hoa ket noi.
+# ------------------------------------------
 
 Write-Host "`n-> Ket noi kubectl..." -ForegroundColor Magenta
 gcloud container clusters get-credentials $CLUSTER_NAME --zone $ZONE --project $PROJECT_ID

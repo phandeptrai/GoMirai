@@ -6,7 +6,10 @@ package com.gomirai.auth.service;
 
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Executor;
 
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,17 +47,25 @@ public class AuthApplicationService {
     private final JwtService jwtService;
     private final UserEventsProducer eventsProducer;
     private final GoogleOAuthService googleOAuthService;
+    /**
+     * Pool chuyên dụng cho BCrypt (CPU-bound).
+     * Tách biệt khỏi Tomcat thread pool để tránh carrier thread pinning.
+     * Xem: AsyncBcryptConfig.java để hiểu sizing rationale.
+     */
+    private final Executor bcryptExecutor;
 
     public AuthApplicationService(AuthUserRepository authUserRepository,
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
             UserEventsProducer eventsProducer,
-            GoogleOAuthService googleOAuthService) {
+            GoogleOAuthService googleOAuthService,
+            @Qualifier("bcryptExecutor") Executor bcryptExecutor) {
         this.authUserRepository = authUserRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.eventsProducer = eventsProducer;
         this.googleOAuthService = googleOAuthService;
+        this.bcryptExecutor = bcryptExecutor;
     }
 
     /**
@@ -110,16 +121,37 @@ public class AuthApplicationService {
      * 3. Tạo JWT token và trả về
      */
     public AuthResponse login(LoginRequest request) {
-        // Tìm user theo số điện thoại
+        // STEP 1 (I/O): DB lookup — chạy trên VT, park khi đợi MongoDB
         AuthUser user = authUserRepository.findByPhoneNumber(request.getPhoneNumber())
                 .orElseThrow(() -> new BusinessException("Thông tin đăng nhập không hợp lệ"));
 
-        // So sánh mật khẩu - passwordEncoder.matches() so sánh plaintext với hash
-        if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
+        // STEP 2 (CPU): BCrypt verify — offload sang bcryptExecutor (Platform Threads).
+        //
+        // Tại sao offload:
+        //   - BCrypt là CPU-bound: không có điểm I/O để VT scheduler park.
+        //   - Nếu chạy trên VT, nó sẽ "pin" carrier thread trong suốt ~50ms.
+        //   - Với 200 VUs đồng thời → 200 carrier threads bị pin → JVM bị nghẽn.
+        //   - Offload sang dedicated pool: chỉ tối đa maxPoolSize BCrypt ops chạy song song.
+        //     Toàn bộ các request còn lại xếp hàng trong queue của bcryptExecutor,
+        //     KHÔNG chiếm carrier thread → JVM scheduler tự do phục vụ các I/O requests khác.
+        boolean passwordMatches;
+        try {
+            passwordMatches = CompletableFuture
+                    .supplyAsync(
+                            () -> passwordEncoder.matches(request.getPassword(), user.getPasswordHash()),
+                            bcryptExecutor)
+                    .join(); // VT-safe: parks VT (not carrier), waiting for bcryptExecutor result
+        } catch (Exception e) {
+            log.error("BCrypt verification failed unexpectedly", e);
+            throw new BusinessException("Thông tin đăng nhập không hợp lệ");
+        }
+
+        if (!passwordMatches) {
             // Trả về message chung để tránh lộ thông tin user tồn tại
             throw new BusinessException("Thông tin đăng nhập không hợp lệ");
         }
 
+        // STEP 3 (CPU-light): JWT signing — nhanh (~1ms), chạy trực tiếp trên VT
         String token = jwtService.generateToken(user.getUserId(), user.getRole().name());
         return new AuthResponse(user.getUserId(), user.getRole().name(), token);
     }

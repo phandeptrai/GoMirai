@@ -34,19 +34,21 @@ public class BookingIndexConfig {
 
             // ── 2dsphere index on pickup location ──────────────────────────────
             // Enables $nearSphere queries used in getPendingBookingsForDriver.
-            ops.ensureIndex(new GeospatialIndex("pickupLocation.point")
+            // createIndex() is the non-deprecated replacement for ensureIndex() in
+            // Spring Data MongoDB 4.5+. Both are idempotent (no-op if index exists).
+            ops.createIndex(new GeospatialIndex("pickupLocation.point")
                     .typed(GeoSpatialIndexType.GEO_2DSPHERE)
                     .named("idx_pickup_2dsphere"));
             log.info("✓ BookingIndex: 2dsphere index on pickupLocation.point ensured");
 
             // ── Compound index: (status, createdAt DESC) ───────────────────────
-            ops.ensureIndex(new CompoundIndexDefinition(
+            ops.createIndex(new CompoundIndexDefinition(
                     new Document("status", 1).append("createdAt", -1))
                     .named("idx_status_createdAt"));
             log.info("✓ BookingIndex: compound (status, createdAt) index ensured");
 
             // ── Compound index: (status, vehicleType, createdAt DESC) ──────────
-            ops.ensureIndex(new CompoundIndexDefinition(
+            ops.createIndex(new CompoundIndexDefinition(
                     new Document("status", 1).append("vehicleType", 1).append("createdAt", -1))
                     .named("idx_status_vehicleType_createdAt"));
             log.info("✓ BookingIndex: compound (status, vehicleType, createdAt) index ensured");

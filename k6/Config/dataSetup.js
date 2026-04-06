@@ -93,9 +93,9 @@ export function setupLoadData(userCount = 20) {
           { headers: jsonHeaders(adminToken) });
         if (approveRes.status !== 200) console.log(`[SETUP] Approve failed: ${approveRes.status} - ${approveRes.body}`);
 
-        // Đợi 1 giây để Kafka cập nhật Role trong AuthService
-        sleep(1);
-
+        // Đợi 3 giây để Kafka cập nhật Role trong AuthService (tăng từ 1s lên 3s giúp ổn định hơn)
+        sleep(3);
+ 
         // Re-login to get ROLE_DRIVER
         res = http.post(`${BASE_URL}/api/auth/login`,
           JSON.stringify({ phoneNumber: driverPhone, password: 'TestPass123' }),
@@ -104,10 +104,12 @@ export function setupLoadData(userCount = 20) {
         if (res.status !== 200) console.log(`[SETUP] Driver login failed: ${res.status} - ${res.body}`);
         driverToken = body?.accessToken || driverToken;
         driverId = body?.userId || driverId;
-
-        // Kafka có thể chậm hơn sleep(1) — đảm bảo JWT có ROLE_DRIVER cho /api/tracking/me
+ 
+        // Kafka có thể chậm — đảm bảo JWT có ROLE_DRIVER cho /api/tracking/me
         if (body?.role !== 'DRIVER' && driverId && driverToken) {
-          http.put(`${BASE_URL}/api/auth/users/${driverId}/role/driver`, null, { headers: jsonHeaders(driverToken) });
+          let roleRes = http.put(`${BASE_URL}/api/auth/users/${driverId}/role/driver`, null, { headers: jsonHeaders(driverToken) });
+          if (roleRes.status !== 200) console.log(`[SETUP] Force Role Update failed: ${roleRes.status}`);
+          
           const ref = http.post(`${BASE_URL}/api/auth/refresh`, null, { headers: jsonHeaders(driverToken) });
           const refBody = parseBody(ref) || {};
           if (ref.status === 200 && refBody.accessToken) {
@@ -172,6 +174,11 @@ export function setupLoadData(userCount = 20) {
       pricingRuleId,
       bookingId, bookingId2,
     });
+
+    // --- OPTIMIZATION: Thêm khoảng nghỉ nhỏ để tránh saturated CPU/Gateway trong setup ---
+    if (i < userCount - 1) {
+      sleep(0.2); // 200ms nghỉ giữa mỗi user để Auth-Service giải phóng BCrypt threads
+    }
   }
 
   console.log(`[Setup] Completed generating ${generatedData.length} records.`);

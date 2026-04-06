@@ -5,7 +5,7 @@
  * setup() tạo tất cả dữ liệu dùng chung (tokens, IDs) một lần duy nhất.
  *
  * Run: k6 run main.js
- *      k6 run -e BASE_URL=http://34.85.39.216 main.js
+ *      k6 run -e BASE_URL=http://34.146.11.108 main.js
  *
  * Chạy từng service riêng (standalone):
  *      k6 run auth.test.js

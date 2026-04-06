@@ -41,7 +41,7 @@ spec:
           resources:
             requests:
               memory: "512Mi"
-              cpu: "300m"
+              cpu: "500m"
             limits:
               memory: "512Mi"
               cpu: "1000m"
@@ -94,14 +94,23 @@ spec:
     kind: Deployment
     name: auth-service
   minReplicas: 2
-  maxReplicas: 3
+  maxReplicas: 5
   metrics:
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 50
+          averageUtilization: 60
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 300
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

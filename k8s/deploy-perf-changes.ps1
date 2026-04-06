@@ -61,8 +61,9 @@ try {
 # ──────────────────────────────────────────────────────────────
 $CHANGED_SERVICES = @(
     @{ folder = "ApiGateway";      image = "api-gateway"      },
-    @{ folder = "BookingService";  image = "booking-service"  },
-    @{ folder = "PaymentService";  image = "payment-service"  }
+    @{ folder = "AuthService";  image = "auth-service"  },
+    @{ folder = "DriverService";  image = "driver-service"  },
+    @{ folder = "TrackingService";  image = "tracking-service"  }
 )
 
 Write-Host "`n[2] Configure Docker auth..." -ForegroundColor Yellow
@@ -120,9 +121,12 @@ foreach ($svc in $CHANGED_SERVICES) {
 # ──────────────────────────────────────────────────────────────
 Write-Host "`n[3] Apply K8s YAML đã cập nhật..." -ForegroundColor Yellow
 kubectl apply -f k8s/services/api-gateway.yaml
+kubectl apply -f k8s/services/auth-service.yaml
+kubectl apply -f k8s/services/user-service.yaml
 kubectl apply -f k8s/services/booking-service.yaml
 kubectl apply -f k8s/services/payment-service.yaml
 kubectl apply -f k8s/services/tracking-service.yaml
+kubectl apply -f k8s/services/driver-service.yaml
 Write-Host "-> YAML applied OK" -ForegroundColor Green
 
 # ──────────────────────────────────────────────────────────────
@@ -130,8 +134,11 @@ Write-Host "-> YAML applied OK" -ForegroundColor Green
 # ──────────────────────────────────────────────────────────────
 Write-Host "`n[4] Trigger rolling restart cho 3 services đã thay đổi..." -ForegroundColor Yellow
 kubectl rollout restart deployment/api-gateway     -n $NAMESPACE
+kubectl rollout restart deployment/auth-service    -n $NAMESPACE
+kubectl rollout restart deployment/driver-service    -n $NAMESPACE
 kubectl rollout restart deployment/booking-service -n $NAMESPACE
-kubectl rollout restart deployment/payment-service -n $NAMESPACE
+kubectl rollout restart deployment/tracking-service -n $NAMESPACE
+
 Write-Host "-> Rollout restart issued OK" -ForegroundColor Green
 
 # ──────────────────────────────────────────────────────────────
@@ -139,7 +146,7 @@ Write-Host "-> Rollout restart issued OK" -ForegroundColor Green
 # ──────────────────────────────────────────────────────────────
 Write-Host "`n[5] Chờ rollout hoàn tất (timeout 5 phút mỗi service)..." -ForegroundColor Yellow
 
-foreach ($dep in @("api-gateway", "booking-service", "payment-service")) {
+foreach ($dep in @("api-gateway", "auth-service", "user-service", "booking-service", "payment-service")) {
     Write-Host "   Waiting: $dep..." -ForegroundColor DarkGray
     kubectl rollout status deployment/$dep -n $NAMESPACE --timeout=300s
     if ($LASTEXITCODE -ne 0) {
@@ -154,7 +161,7 @@ foreach ($dep in @("api-gateway", "booking-service", "payment-service")) {
 # STEP 6: Hiển thị trạng thái cuối
 # ──────────────────────────────────────────────────────────────
 Write-Host "`n[6] Trạng thái pods sau deploy:" -ForegroundColor Yellow
-kubectl get pods -n $NAMESPACE -l "app in (api-gateway,booking-service,payment-service,tracking-service)"
+kubectl get pods -n $NAMESPACE -l "app in (api-gateway,auth-service,user-service,booking-service,payment-service,tracking-service)"
 
 Write-Host "`n=========================================================="
 Write-Host " DEPLOY HOÀN TẤT!" -ForegroundColor Green

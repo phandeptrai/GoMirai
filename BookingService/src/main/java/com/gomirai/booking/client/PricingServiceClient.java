@@ -38,7 +38,7 @@ public class PricingServiceClient {
     @Value("${booking.pricing-service.timeout:5000}")
     private int timeoutMs;
 
-    private static final String PRICING_SERVICE_NAME = "PricingService";
+    private static final String PRICING_SERVICE_NAME = "pricing-service";
     private static final String PRICING_SERVICE_PATH = "/api/pricing/estimate";
 
     /**

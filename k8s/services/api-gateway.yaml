@@ -31,10 +31,10 @@ spec:
           resources:
             requests:
               memory: "512Mi"
-              cpu: "500m"   # PERF #3: 300m→500m to avoid throttling under JWT validation load
+              cpu: "500m"
             limits:
               memory: "768Mi"  # slightly more headroom for burst
-              cpu: "600m"   # 600m × 5 maxReplicas = 3 vCPU max for gateway
+              cpu: "1500m"
           startupProbe:
             httpGet:
               path: /actuator/health
@@ -85,20 +85,29 @@ spec:
     kind: Deployment
     name: api-gateway
   minReplicas: 2
-  maxReplicas: 5   # PERF #3: 6→5 to cap gateway at 3 vCPU total within 24 vCPU quota
+  maxReplicas: 5
   metrics:
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 50
+          averageUtilization: 60
     - type: Resource
       resource:
         name: memory
         target:
           type: Utilization
-          averageUtilization: 50
+          averageUtilization: 60
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 300
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

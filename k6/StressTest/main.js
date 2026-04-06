@@ -1,23 +1,73 @@
-/**
- * GoMirai Stress Test Runner
- * Mục tiêu: Tìm giới hạn chịu tải thực tế của hệ thống bằng cách đẩy số lượng Request/giây lên rất cao.
- * Tăng số lượng VU từng giai đoạn (Steps) để đo lường lúc nào server bắt đầu sụt giảm hiệu năng.
- *
- * Chạy với k6:
- *   k6 run main.js
- */
+import http from 'k6/http';
+import { check, sleep, group } from 'k6';
+import { SharedArray } from 'k6/data';
+import { Trend, Rate } from 'k6/metrics';
+import papaparse from 'https://jslib.k6.io/papaparse/5.1.1/index.js';
 
-import { stressOptions } from '../Config/options.js';
-import { setupLoadData } from '../Config/dataSetup.js';
-import { runCriticalTests } from '../Config/scenarios.js';
+const loginTrend = new Trend('duration_login_ms');
+const updateLocTrend = new Trend('duration_update_location_ms');
+const nearbyTrend = new Trend('duration_nearby_search_ms');
+const successRate = new Rate('overall_success_rate');
 
-export const options = Object.assign({}, stressOptions, { setupTimeout: '5m' });
+const usersData = new SharedArray('users', function () {
+    return papaparse.parse(open('../DataTest/users_prepared.csv'), { header: true }).data;
+});
 
-export function setup() {
-  return setupLoadData(50);
-}
+const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 
-export default function (dataArray) {
-  const vuIndex = (__VU - 1) % dataArray.length;
-  runCriticalTests(dataArray[vuIndex]);
+export const options = {
+    stages: [
+        { duration: '1m',  target: 100 }, 
+        { duration: '3m',  target: 200 }, 
+        { duration: '1m',  target: 0   }
+    ],
+    thresholds: {
+        'http_req_duration': ['p(95)<1500'],
+        'duration_login_ms': ['p(95)<600'],
+        'duration_update_location_ms': ['p(95)<400'],
+        'duration_nearby_search_ms': ['p(95)<1000'],
+        'overall_success_rate': ['rate>0.90'],
+    }
+};
+
+export default function () {
+    const user = usersData[Math.floor(Math.random() * usersData.length)];
+    if (!user || !user.phoneNumber) return;
+
+    // LOGIN
+    const loginStart = Date.now();
+    const loginRes = http.post(`${BASE_URL}/api/auth/login`, JSON.stringify({
+        phoneNumber: user.phoneNumber, password: user.password,
+    }), { headers: { 'Content-Type': 'application/json' } });
+    loginTrend.add(Date.now() - loginStart);
+
+    const isLoginOk = check(loginRes, { 'Login OK': r => r.status === 200 });
+    successRate.add(isLoginOk);
+    if (!isLoginOk) return;
+
+    const token = loginRes.json('accessToken');
+    const headers = { headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' } };
+
+    group('Stress Test Actions', () => {
+        if (user.role === 'DRIVER') {
+            const start = Date.now();
+            const res = http.post(`${BASE_URL}/api/tracking/location`, JSON.stringify({
+                driverId: user.userId,
+                latitude: 10.7769 + (Math.random() - 0.5) * 0.01,
+                longitude: 106.7009 + (Math.random() - 0.5) * 0.01,
+                status: 'ONLINE', vehicleType: 'CAR_4'
+            }), headers);
+            updateLocTrend.add(Date.now() - start);
+            successRate.add(check(res, { 'Driver Loc OK': r => r.status === 200 }));
+        } else {
+            const start = Date.now();
+            const res = http.post(`${BASE_URL}/api/tracking/nearby`, JSON.stringify({
+                latitude: 10.7769, longitude: 106.7009, radius: 5.0, vehicleType: 'CAR_4'
+            }), headers);
+            nearbyTrend.add(Date.now() - start);
+            successRate.add(check(res, { 'Customer Nearby OK': r => r.status === 200 }));
+        }
+    });
+
+    sleep(1);
 }

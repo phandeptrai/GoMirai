@@ -21,7 +21,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
+import org.springframework.data.redis.core.ZSetOperations;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -57,7 +63,14 @@ public class TrackingService {
 
     private static final String GEO_KEY = "drivers:geo";
     private static final String STATE_KEY_PREFIX = "drivers:state:";
-    private static final long STATE_TTL_SECONDS = 300; // 5 minutes
+    private static final long STATE_TTL_SECONDS = 3600; // Increased to 1 hour for Stress Testing stability
+
+    // --- OPTIMIZATION: Micro-cache for nearby results (5s TTL) ---
+    // Cache key: quantized lat,lon + radius + type + status
+    private final Cache<String, List<DriverLocationResponse>> nearbyCache = Caffeine.newBuilder()
+            .expireAfterWrite(5, TimeUnit.SECONDS)
+            .maximumSize(500)
+            .build();
 
     /**
      * Cập nhật vị trí và metadata của tài xế trong Redis.
@@ -111,6 +124,17 @@ public class TrackingService {
     }
 
     public List<DriverLocationResponse> findNearbyDrivers(NearbyDriverRequest request) {
+        // 1. Try Local Cache first (throttle high-concurrency spikes in same area)
+        String cacheKey = String.format("%.4f:%.4f:%.1f:%s:%s", 
+                request.getLatitude(), request.getLongitude(), 
+                request.getRadius(), request.getVehicleType(), request.getStatus());
+        
+        List<DriverLocationResponse> cached = nearbyCache.getIfPresent(cacheKey);
+        if (cached != null) {
+            log.trace("Cache hit for nearby search: {}", cacheKey);
+            return cached;
+        }
+
         try {
             List<DriverLocationResponse> drivers = new ArrayList<>();
             double currentRadius = request.getRadius();
@@ -173,11 +197,15 @@ public class TrackingService {
                         }
                     }
 
-                    // Cleanup expired once, after processing all results
-                    cleanupExpiredGeoPoints(expiredDriverIds);
+                    // --- OPTIMIZATION: Move cleanup to Async thread ---
+                    if (!expiredDriverIds.isEmpty()) {
+                        CompletableFuture.runAsync(() -> cleanupExpiredGeoPoints(expiredDriverIds));
+                    }
 
                     if (drivers.size() >= request.getLimit()) {
-                        return drivers.subList(0, request.getLimit());
+                        List<DriverLocationResponse> finalResult = drivers.subList(0, request.getLimit());
+                        nearbyCache.put(cacheKey, finalResult);
+                        return finalResult;
                     }
                 }
 
@@ -186,6 +214,7 @@ public class TrackingService {
                     if (request.isEnrichDetails() && !drivers.isEmpty()) {
                         enrichWithDriverProfile(drivers);
                     }
+                    nearbyCache.put(cacheKey, drivers);
                     return drivers;
                 }
 
@@ -254,31 +283,33 @@ public class TrackingService {
      */
     public void cleanupExpiredGeoPointsScheduled() {
         try {
-            var members = redisTemplate.opsForZSet().range(GEO_KEY, 0, -1);
-            if (members == null || members.isEmpty()) {
-                return;
-            }
-
-            List<String> memberList = new ArrayList<>(members);
-
-            // --- FIX: Batch all metadata checks with one MGET call ---
-            List<String> stateKeys = memberList.stream()
-                    .map(id -> STATE_KEY_PREFIX + id)
-                    .collect(Collectors.toList());
-            List<String> stateValues = redisTemplate.opsForValue().multiGet(stateKeys);
-
+            // --- OPTIMIZATION: Use ZSCAN instead of ZRANGE(0, -1) ---
+            // range(0, -1) blocks the entire Redis single thread for O(N).
+            // scan works in chunks, allowing other requests to pass through.
+            ScanOptions options = ScanOptions.scanOptions().count(100).build();
+            Cursor<ZSetOperations.TypedTuple<String>> cursor = redisTemplate.opsForZSet().scan(GEO_KEY, options);
+            
             List<String> expiredDriverIds = new ArrayList<>();
-            for (int i = 0; i < memberList.size(); i++) {
-                if (stateValues == null || stateValues.get(i) == null) {
-                    expiredDriverIds.add(memberList.get(i));
+            while (cursor.hasNext()) {
+                ZSetOperations.TypedTuple<String> tuple = cursor.next();
+                String driverId = tuple.getValue();
+                
+                String stateJson = redisTemplate.opsForValue().get(STATE_KEY_PREFIX + driverId);
+                if (stateJson == null) {
+                    expiredDriverIds.add(driverId);
+                }
+                
+                // Batch remove to avoid huge ZREM calls
+                if (expiredDriverIds.size() >= 100) {
+                    redisTemplate.opsForZSet().remove(GEO_KEY, expiredDriverIds.toArray());
+                    expiredDriverIds.clear();
                 }
             }
+            cursor.close();
 
             if (!expiredDriverIds.isEmpty()) {
-                // Bulk remove: ZSetOperations.remove(K, Object...) accepts Object[]
-                // ZSet is the underlying structure for Redis Geo Set — equivalent to GeoOperations.remove()
                 redisTemplate.opsForZSet().remove(GEO_KEY, expiredDriverIds.toArray());
-                log.info("Scheduled cleanup: Removed {} expired Geo Points from Redis", expiredDriverIds.size());
+                log.info("Scheduled cleanup: Removed {} remaining expired Geo Points", expiredDriverIds.size());
             }
         } catch (RedisConnectionFailureException e) {
             log.error("Redis connection failed during scheduled cleanup", e);

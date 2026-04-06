@@ -39,10 +39,10 @@ spec:
           resources:
             requests:
               memory: "512Mi"
-              cpu: "400m"   # PERF #3: 300m→400m (Redis writes + geo calculations)
+              cpu: "400m"
             limits:
               memory: "512Mi"
-              cpu: "500m"   # 500m × 3 maxReplicas = 1.5 vCPU max
+              cpu: "800m"
           startupProbe:
             httpGet:
               path: /actuator/health
@@ -92,12 +92,21 @@ spec:
     kind: Deployment
     name: tracking-service
   minReplicas: 2
-  maxReplicas: 3   # PERF #3: 4→3 to save vCPU headroom
+  maxReplicas: 4
   metrics:
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 50
+          averageUtilization: 60
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 300
 ---

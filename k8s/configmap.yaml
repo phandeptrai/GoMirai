@@ -5,9 +5,10 @@ metadata:
   namespace: gomirai
 data:
   # ── Infrastructure ────────────────────────────────────────────────────────
-  SPRING_CLOUD_CONSUL_HOST: "consul-service"
+  SPRING_CLOUD_CONSUL_HOST: "consul-service.gomirai.svc.cluster.local"
   SPRING_CLOUD_CONSUL_PORT: "8500"
-  SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka-service:9092"
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka-service.gomirai.svc.cluster.local:9092"
+  SPRING_DATA_REDIS_HOST: "redis-service.gomirai.svc.cluster.local"
 
   # ── Spring Profile ─────────────────────────────────────────────────────────
   # Đổi sang "prod" — loại bỏ dev log level, dev-only beans
@@ -23,3 +24,9 @@ data:
   # ⚠️  THAY bằng domain production thực
   VNPAY_RETURN_URL: "https://your-domain.com/payment/vnpay/result"
   VNPAY_PAYMENT_URL: "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html"
+
+  # ── PERFORMANCE TUNING ─────────────────────────────────────────────────────
+  # Set BCrypt strength to 8 for speed. In production, 10-12 is recommended.
+  SECURITY_PASSWORD_BCRYPT_STRENGTH: "8"
+  # Default connection pool size for MongoDB across services
+  SPRING_DATA_MONGODB_MAX_CONNECTION_POOL_SIZE: "100"

@@ -39,7 +39,7 @@ public class MapServiceClient {
     @Value("${booking.map-service.timeout:5000}")
     private int timeoutMs;
 
-    private static final String MAP_SERVICE_NAME = "MapService";
+    private static final String MAP_SERVICE_NAME = "map-service";
     private static final String MAP_SERVICE_PATH = "/api/map/directions";
 
     /**

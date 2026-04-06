@@ -39,10 +39,10 @@ spec:
           resources:
             requests:
               memory: "512Mi"
-              cpu: "200m"
+              cpu: "400m"
             limits:
               memory: "512Mi"
-              cpu: "200m"
+              cpu: "800m"
           startupProbe:
             httpGet:
               path: /actuator/health
@@ -91,15 +91,24 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: payment-service
-  minReplicas: 1
-  maxReplicas: 3
+  minReplicas: 2
+  maxReplicas: 4
   metrics:
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 50
+          averageUtilization: 60
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 300
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
