@@ -30,14 +30,12 @@ jobs:
         id: filter
         with:
           filters: |
-            auth-service: AuthService/**
-            user-service: UserService/**
-            payment-service: PaymentService/**
-            driver-service: DriverService/**
-            tracking-service: TrackingService/**
-            pricing-service: PricingService/**
+            identity-service: IdentityService/**
             ride-service: RideService/**
-            booking-service: BookingService/**
+            driver-service: DriverService/**
+            payment-service: PaymentService/**
+            tracking-service: TrackingService/**
+            communication-service: CommunicationService/**
             api-gateway: ApiGateway/**
 
   # ==========================================
@@ -46,11 +44,9 @@ jobs:
   build-and-deploy:
     name: 🚀 Build & Deploy
     needs: [changes]
-    # Mở comment dòng dưới nếu muốn chỉ chạy khi code có thay đổi
-    # if: needs.changes.outputs.services != '[]' 
     strategy:
       matrix:
-        # Mặc định chạy api-gateway nếu không phát hiện thay đổi (để test pipeline)
+        # Nếu không có thay đổi, mặc định chạy api-gateway để test
         service: ${{ fromJson(needs.changes.outputs.services == '[]' && '["api-gateway"]' || needs.changes.outputs.services) }}
     runs-on: ubuntu-latest
     steps:
@@ -70,11 +66,20 @@ jobs:
       - name: Build & Push Docker
         run: |
           SVC="${{ matrix.service }}"
-          FOLDER=$(echo "$SVC" | sed 's/-service//' | awk '{print toupper(substr($0,1,1))substr($0,2)}')Service
-          [[ "$SVC" == "api-gateway" ]] && FOLDER="ApiGateway"
           
-          IMAGE_PATH="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ matrix.service }}"
+          # Chuyển đổi tên service (kebab-case) sang tên Folder (PascalCase)
+          # Ví dụ: identity-service -> IdentityService
+          if [[ "$SVC" == "api-gateway" ]]; then
+            FOLDER="ApiGateway"
+          else
+            FOLDER=$(echo "$SVC" | sed -r 's/(^|-)([a-z])/\U\2/g')
+          fi
+          
+          echo "Building service: $SVC from folder: $FOLDER"
+          
+          IMAGE_PATH="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/$SVC"
           gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+          
           docker build -t $IMAGE_PATH:${{ github.sha }} -t $IMAGE_PATH:latest -f $FOLDER/Dockerfile .
           docker push $IMAGE_PATH --all-tags
 
@@ -109,7 +114,6 @@ jobs:
 
       - name: Run Verification & Gating
         run: |
-          # Lấy IP của Ingress/API Gateway
           export BASE_URL="http://$(kubectl get svc nginx-service -n ${{ env.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')"
           echo "Testing against: $BASE_URL"
           chmod +x ./k8s/scripts/verify.sh
