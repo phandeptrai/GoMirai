@@ -220,11 +220,19 @@ export function setup() {
 // DEFAULT — gọi từng service test theo thứ tự
 // ============================================================================
 export default function (data) {
+  console.log('\n' + '='.repeat(15) + ' IDENTITY SERVICE ' + '='.repeat(15));
   runAuthTests(data);
+  console.log('\n' + '='.repeat(15) + ' DRIVER SERVICE ' + '='.repeat(17));
   runDriverTests(data);
+  console.log('\n' + '='.repeat(15) + ' PRICING SERVICE ' + '='.repeat(16));
   runPricingTests(data);
+  console.log('\n' + '='.repeat(15) + ' TRACKING SERVICE ' + '='.repeat(15));
   runTrackingTests(data);
+  console.log('\n' + '='.repeat(15) + ' MAP SERVICE ' + '='.repeat(20));
   runMapTests(data);
+  console.log('\n' + '='.repeat(15) + ' BOOKING SERVICE ' + '='.repeat(16));
   runBookingTests(data);
+  console.log('\n' + '='.repeat(15) + ' REVIEW SERVICE ' + '='.repeat(17));
   runReviewTests(data);
+  console.log('\n' + '='.repeat(50) + '\n');
 }
