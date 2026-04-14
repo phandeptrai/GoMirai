@@ -41,15 +41,54 @@ jobs:
             api-gateway: ApiGateway/**
 
   # ==========================================
-  # 2. SAFE DEPLOY & VERIFY (Zero Downtime)
+  # 2. BUILD & DEPLOY (Parallel Matrix)
   # ==========================================
-  deploy-and-verify:
-    name: 🚀 Safe Release
+  build-and-deploy:
+    name: 🚀 Build & Deploy
     needs: [changes]
-    if: needs.changes.outputs.services != '[]'
+    # Mở comment dòng dưới nếu muốn chỉ chạy khi code có thay đổi
+    # if: needs.changes.outputs.services != '[]' 
     strategy:
       matrix:
-        service: ${{ fromJson(needs.changes.outputs.services) }}
+        # Mặc định chạy api-gateway nếu không phát hiện thay đổi (để test pipeline)
+        service: ${{ fromJson(needs.changes.outputs.services == '[]' && '["api-gateway"]' || needs.changes.outputs.services) }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 'Authenticate to GCP'
+          uses: 'google-github-actions/auth@v2'
+          with:
+            credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
+
+      - name: 'Get GKE Credentials'
+          uses: 'google-github-actions/get-gke-credentials@v2'
+          with:
+            cluster_name: ${{ env.CLUSTER_NAME }}
+            location: ${{ env.CLUSTER_ZONE }}
+
+      - name: Build & Push Docker
+        run: |
+          SVC="${{ matrix.service }}"
+          FOLDER=$(echo "$SVC" | sed 's/-service//' | awk '{print toupper(substr($0,1,1))substr($0,2)}')Service
+          [[ "$SVC" == "api-gateway" ]] && FOLDER="ApiGateway"
+          
+          IMAGE_PATH="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ matrix.service }}"
+          gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+          docker build -t $IMAGE_PATH:${{ github.sha }} -t $IMAGE_PATH:latest -f $FOLDER/Dockerfile .
+          docker push $IMAGE_PATH --all-tags
+
+      - name: Deploy to K8s
+        run: |
+          chmod +x ./k8s/scripts/deploy.sh
+          ./k8s/scripts/deploy.sh
+
+  # ==========================================
+  # 3. GLOBAL VERIFICATION (One Job - Full Test)
+  # ==========================================
+  verify-system:
+    name: 🛡️ Grouped Verification
+    needs: [build-and-deploy]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -65,29 +104,13 @@ jobs:
           cluster_name: ${{ env.CLUSTER_NAME }}
           location: ${{ env.CLUSTER_ZONE }}
 
-      - name: Install k6
-        run: |
-          curl https://github.com/grafana/k6/releases/download/v0.48.0/k6-v0.48.0-linux-amd64.tar.gz -L | tar -xz --strip-components 1
-          sudo cp k6 /usr/local/bin/k6
-
-      - name: Build & Push Docker
-        run: |
-          SVC="${{ matrix.service }}"
-          FOLDER=$(echo "$SVC" | sed 's/-service//' | awk '{print toupper(substr($0,1,1))substr($0,2)}')Service
-          [[ "$SVC" == "api-gateway" ]] && FOLDER="ApiGateway"
-          
-          IMAGE_PATH="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ matrix.service }}"
-          gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
-          docker build -t $IMAGE_PATH:${{ github.sha }} -t $IMAGE_PATH:latest -f $FOLDER/Dockerfile .
-          docker push $IMAGE_PATH --all-tags
-
-      - name: Deploy Version 2
-        run: |
-          chmod +x ./k8s/scripts/deploy.sh
-          ./k8s/scripts/deploy.sh
+      - name: Setup k6
+        uses: grafana/setup-k6-action@v1
 
       - name: Run Verification & Gating
         run: |
+          # Lấy IP của Ingress/API Gateway
           export BASE_URL="http://$(kubectl get svc nginx-service -n ${{ env.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}')"
+          echo "Testing against: $BASE_URL"
           chmod +x ./k8s/scripts/verify.sh
           ./k8s/scripts/verify.sh
