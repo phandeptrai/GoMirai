@@ -41,12 +41,13 @@ public class SystemConstants {
     public static final int AUTH_RATE_LIMIT_PER_MINUTE = 5;
 
     // Service Names (Consul)
-    public static final String SERVICE_API_GATEWAY = "ApiGateway";
-    public static final String SERVICE_AUTH = "AuthService";
-    public static final String SERVICE_USER = "UserService";
-    public static final String SERVICE_PAYMENT = "PaymentService";
-    public static final String SERVICE_RIDE = "RideService";
-    public static final String SERVICE_NOTIFICATION = "NotificationService";
+    public static final String SERVICE_API_GATEWAY = "api-gateway";
+    public static final String SERVICE_IDENTITY = "identity-service";
+    public static final String SERVICE_PAYMENT = "payment-service";
+    public static final String SERVICE_RIDE = "ride-service";
+    public static final String SERVICE_COMMUNICATION = "communication-service";
+    public static final String SERVICE_DRIVER = "driver-service";
+    public static final String SERVICE_TRACKING = "tracking-service";
 
     private SystemConstants() {
         // Utility class, prevent instantiation

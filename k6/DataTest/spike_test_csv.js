@@ -15,7 +15,7 @@ const usersData = new SharedArray('users', function () {
     return papaparse.parse(open('./users_prepared.csv'), { header: true }).data;
 });
 
-const BASE_URL = 'http://34.146.249.41';
+const BASE_URL = __ENV.BASE_URL || 'http://localhost:8080';
 
 export const options = {
     stages: [

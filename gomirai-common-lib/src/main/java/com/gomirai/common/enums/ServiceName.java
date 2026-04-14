@@ -37,16 +37,16 @@ import java.util.Optional;
  */
 public enum ServiceName {
 
-    AUTH_SERVICE        ("auth-service",         "auth",         "/auth"),
-    USER_SERVICE        ("user-service",          "user",         "/api/user"),
+    AUTH_SERVICE        ("identity-service",     "auth",         "/auth"),
+    USER_SERVICE        ("identity-service",     "user",         "/api/user"),
     DRIVER_SERVICE      ("driver-service",        "driver",       "/api/driver"),
-    BOOKING_SERVICE     ("booking-service",       "booking",      "/api/booking"),
+    BOOKING_SERVICE     ("ride-service",       "booking",      "/api/booking"),
     PAYMENT_SERVICE     ("payment-service",       "payment",      "/api/payment"),
     TRACKING_SERVICE    ("tracking-service",      "tracking",     "/api/tracking"),
-    PRICING_SERVICE     ("pricing-service",       "pricing",      "/api/pricing"),
-    MAP_SERVICE         ("map-service",           "map",          "/api/map"),
-    REVIEW_SERVICE      ("review-service",        "review",       "/api/review"),
-    NOTIFICATION_SERVICE("notification-service",  "notification", "/api/notification");
+    PRICING_SERVICE     ("ride-service",       "pricing",      "/api/pricing"),
+    MAP_SERVICE         ("ride-service",           "map",          "/api/map"),
+    REVIEW_SERVICE      ("communication-service",        "review",       "/api/review"),
+    NOTIFICATION_SERVICE("communication-service",  "notification", "/api/notification");
 
     // ──────────────────────────────────────────────────────────────────────────
     // Fields

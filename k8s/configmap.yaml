@@ -4,29 +4,19 @@ metadata:
   name: gomirai-config
   namespace: gomirai
 data:
-  # ── Infrastructure ────────────────────────────────────────────────────────
-  SPRING_CLOUD_CONSUL_HOST: "consul-service.gomirai.svc.cluster.local"
+  # Infrastructure Hosts (Sá» dá»¥ng tÃªn Service trong K8s)
+  SPRING_CLOUD_CONSUL_HOST: "consul-service"
   SPRING_CLOUD_CONSUL_PORT: "8500"
-  SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka-service.gomirai.svc.cluster.local:9092"
-  SPRING_DATA_REDIS_HOST: "redis-service.gomirai.svc.cluster.local"
-
-  # ── Spring Profile ─────────────────────────────────────────────────────────
-  # Đổi sang "prod" — loại bỏ dev log level, dev-only beans
-  SPRING_PROFILES_ACTIVE: "prod"
-
-  # ── CORS — Production domains ──────────────────────────────────────────────
-  # ⚠️  THAY "your-domain.com" BẰNG DOMAIN THỰC CỦA BẠN
-  # Ví dụ: https://gomirai.io,https://www.gomirai.io
-  # ApiGateway dùng giá trị này cho phép frontend gọi vào
-  CORS_ALLOWED_ORIGINS: "https://your-domain.com,https://www.your-domain.com"
-
-  # ── VNPay — Production callback URL ───────────────────────────────────────
-  # ⚠️  THAY bằng domain production thực
-  VNPAY_RETURN_URL: "https://your-domain.com/payment/vnpay/result"
-  VNPAY_PAYMENT_URL: "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html"
-
-  # ── PERFORMANCE TUNING ─────────────────────────────────────────────────────
-  # Set BCrypt strength to 8 for speed. In production, 10-12 is recommended.
-  SECURITY_PASSWORD_BCRYPT_STRENGTH: "8"
-  # Default connection pool size for MongoDB across services
-  SPRING_DATA_MONGODB_MAX_CONNECTION_POOL_SIZE: "100"
+  SPRING_DATA_REDIS_HOST: "redis"
+  SPRING_DATA_REDIS_PORT: "6379"
+  SPRING_DATA_MONGODB_URI: "mongodb://mongodb-service.gomirai.svc.cluster.local:27017/gomirai?replicaSet=rs0"
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka-service:29092"
+  
+  # Logging & Discovery
+  SPRING_CACHE_TYPE: "redis"
+  LOGGING_LEVEL_ROOT: "INFO"
+  SPRING_CLOUD_CONSUL_DISCOVERY_ENABLED: "true"
+  SPRING_CLOUD_CONSUL_CONFIG_ENABLED: "true"
+  
+  # Business Config
+  CORS_ALLOWED_ORIGINS: "http://34.84.137.183,http://localhost:5173"

@@ -1,0 +1,63 @@
+# MongoDB PVC: dev size; expand in prod if needed (PVC cannot shrink in-place). Uses gomirai-zonal-balanced.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb
+  namespace: gomirai
+  labels:
+    app: mongodb
+spec:
+  serviceName: mongodb-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb
+  template:
+    metadata:
+      labels:
+        app: mongodb
+    spec:
+      securityContext:
+        fsGroup: 999
+      containers:
+        - name: mongodb
+          image: mongo:6.0
+          ports:
+            - containerPort: 27017
+              name: mongodb
+          args:
+            - "--bind_ip_all"
+            - "--replSet"
+            - "rs0"
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "600m"
+            limits:
+              memory: "4Gi"
+              cpu: "1500m"
+          volumeMounts:
+            - name: mongodb-data
+              mountPath: /data/db
+  volumeClaimTemplates:
+    - metadata:
+        name: mongodb-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: "gomirai-zonal-balanced"
+        resources:
+          requests:
+            storage: 16Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-service
+  namespace: gomirai
+spec:
+  selector:
+    app: mongodb
+  ports:
+    - port: 27017
+      targetPort: 27017
+      name: mongodb

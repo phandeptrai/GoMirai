@@ -1,0 +1,12 @@
+# Zonal balanced PD: one replica per volume -> counts once toward regional SSD_TOTAL_GB
+# (unlike default standard-rwo regional PD which is replicated across zones and can consume ~2x quota).
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gomirai-zonal-balanced
+provisioner: pd.csi.storage.gke.io
+parameters:
+  type: pd-balanced
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Delete

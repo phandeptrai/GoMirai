@@ -11,7 +11,7 @@ import java.util.UUID;
  * Feign Client để gọi UserService.
  * Thay thế RestTemplate thủ công trước đây.
  */
-@FeignClient(name = "user-service")
+@FeignClient(name = "identity-service")
 public interface UserServiceClient {
 
     /**

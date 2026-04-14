@@ -77,7 +77,7 @@ public class SecurityConfig {
 				.cors(cors -> cors.configurationSource(corsConfigurationSource()))
 				.exceptionHandling(ex -> ex.authenticationEntryPoint(authenticationEntryPoint))
 				.authorizeHttpRequests(authorize -> authorize
-						.requestMatchers("/actuator/health").permitAll()
+						.requestMatchers("/actuator/health", "/actuator/prometheus", "/actuator/metrics").permitAll()
 						// Allow WebSocket endpoints without authentication
 						.requestMatchers("/ws/**").permitAll()
 						// Public driver info for customer to view during trip

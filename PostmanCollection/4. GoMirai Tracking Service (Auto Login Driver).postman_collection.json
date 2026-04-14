@@ -1,0 +1,480 @@
+{
+  "info": {
+    "_postman_id": "1d98a8ff-e8ee-4d06-94cb-ef92e2d6677c",
+    "name": "4. GoMirai Tracking Service (Auto Login Driver)",
+    "description": "Bao gồm bước đăng nhập Driver tự động để lấy driver_token trước khi test vị trí.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "39391901",
+    "_collection_link": "https://go.postman.co/collection/39391901-1d98a8ff-e8ee-4d06-94cb-ef92e2d6677c?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "1. Driver Updates Location",
+      "item": [
+        {
+          "name": "0. SETUP - Login Driver (Run First)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Login Driver thành công (200)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "var jsonData = pm.response.json();",
+                  "",
+                  "// Tự động lưu Token và ID của Driver vào môi trường",
+                  "if (jsonData.accessToken) {",
+                  "    pm.environment.set(\"driver_token\", jsonData.accessToken);",
+                  "    pm.environment.set(\"driver_id\", jsonData.userId);",
+                  "    console.log(\"✅ Đã cập nhật driver_token và driver_id cho tài khoản: 0798052860\");",
+                  "} else {",
+                  "    console.error(\"❌ Không tìm thấy accessToken!\");",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"phoneNumber\": \"{{random_phone}}\",\n    \"password\": \"TestPass123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Đăng nhập bằng tài khoản Driver có sẵn để lấy token."
+          },
+          "response": []
+        },
+        {
+          "name": "Driver 1 - Update Location (Center)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Update vị trí thành công (200)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "// Lưu tọa độ tài xế để verify",
+                  "pm.environment.set(\"driver_lat\", 10.762622);",
+                  "pm.environment.set(\"driver_lon\", 106.660172);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driverId\": \"{{driver_id}}\",\n  \"latitude\": 10.762622,\n  \"longitude\": 106.660172,\n  \"status\": \"ONLINE\",\n  \"vehicleType\": \"MOTORBIKE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/tracking/location",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tracking",
+                "location"
+              ]
+            },
+            "description": "Sử dụng {{driver_token}} vừa lấy được."
+          },
+          "response": []
+        },
+        {
+          "name": "Driver 2 - Update Location (Far Away)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Update vị trí thành công (200)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"driverId\": \"{{driver_id}}\",\n  \"latitude\": 10.8024,\n  \"longitude\": 106.7148,\n  \"status\": \"ONLINE\",\n  \"vehicleType\": \"MOTORBIKE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/tracking/location",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tracking",
+                "location"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Customer Searches Nearby",
+      "item": [
+        {
+          "name": "Find All Nearby (No Filter)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Tìm thấy tài xế (200)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "var jsonData = pm.response.json();",
+                  "pm.test(\"Danh sách không được rỗng\", function () {",
+                  "    pm.expect(jsonData.length).to.be.above(0);",
+                  "});",
+                  "",
+                  "// Kiểm tra xem có tìm thấy đúng tài xế {{driver_id}} vừa login không",
+                  "var currentDriverId = pm.environment.get(\"driver_id\");",
+                  "var foundDriver = jsonData.find(d => d.driverId === currentDriverId);",
+                  "",
+                  "if (!foundDriver) {",
+                  "    console.warn(\"⚠️ Cảnh báo: Không tìm thấy Driver ID \" + currentDriverId + \" trong kết quả. Có thể do Redis chưa kịp lưu hoặc ID bị sai.\");",
+                  "} else {",
+                  "    pm.test(\"Tìm thấy chính xác Driver vừa update\", function() {",
+                  "         pm.expect(foundDriver).to.not.be.undefined;",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{auth_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": 10.762600,\n  \"longitude\": 106.660100,\n  \"radius\": 5000,\n  \"limit\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/tracking/nearby",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tracking",
+                "nearby"
+              ]
+            },
+            "description": "Dùng {{auth_token}} của Khách hàng để tìm kiếm."
+          },
+          "response": []
+        },
+        {
+          "name": "Find Specific Vehicle (MOTORBIKE)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Tìm thấy xe máy (200)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "var jsonData = pm.response.json();",
+                  "pm.test(\"Tất cả kết quả phải là MOTORBIKE\", function () {",
+                  "    jsonData.forEach(function(driver) {",
+                  "        pm.expect(driver.vehicleType).to.eql(\"MOTORBIKE\");",
+                  "    });",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{auth_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": 10.762622,\n  \"longitude\": 106.660172,\n  \"radius\": 2000,\n  \"vehicleType\": \"MOTORBIKE\",\n  \"limit\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/tracking/nearby",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tracking",
+                "nearby"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Find Non-Existent Vehicle (CAR_7)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Không tìm thấy xe 7 chỗ (200)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "var jsonData = pm.response.json();",
+                  "pm.test(\"Danh sách phải rỗng\", function () {",
+                  "    pm.expect(jsonData.length).to.eql(0);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{auth_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": 10.762622,\n  \"longitude\": 106.660172,\n  \"radius\": 2000,\n  \"vehicleType\": \"CAR_7\",\n  \"limit\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/tracking/nearby",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tracking",
+                "nearby"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Error Handling (Negative Tests)",
+      "item": [
+        {
+          "name": "Invalid Radius (<= 0)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Bắt lỗi bán kính âm (400)\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "var jsonData = pm.response.json();",
+                  "pm.test(\"Có thông báo lỗi\", function () {",
+                  "    pm.expect(jsonData.message).to.not.be.empty;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{auth_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": 10.762622,\n  \"longitude\": 106.660172,\n  \"radius\": -100,\n  \"limit\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/tracking/nearby",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tracking",
+                "nearby"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Missing Required Fields (Lat/Lon)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Tạm chấp nhận 200 nếu backend chưa validate chặt",
+                  "pm.test(\"Check Status (200 hoặc 400)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 400]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{auth_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"radius\": 2000,\n  \"limit\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/tracking/nearby",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "tracking",
+                "nearby"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

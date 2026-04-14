@@ -1,4 +1,45 @@
 services:
+  # MongoDB - Main Database for all microservices
+  # Mirrors k8s/mongodb.yaml: replSet rs0 + Service DNS mongodb-service.gomirai.svc.cluster.local
+  mongo:
+    image: mongo:6.0
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      gomirai-network:
+        aliases:
+          - mongodb-service.gomirai.svc.cluster.local
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        /usr/local/bin/docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all &
+        MONGOD_PID=$$!
+        for i in $$(seq 1 90); do
+          mongosh --host 127.0.0.1 --eval 'db.runCommand({ping:1})' --quiet 2>/dev/null && break
+          if [ "$$i" -eq 90 ]; then exit 1; fi
+          sleep 1
+        done
+        mongosh --host 127.0.0.1 --eval 'try { rs.status() } catch (e) { rs.initiate({_id:"rs0",members:[{_id:0,host:"mongodb-service.gomirai.svc.cluster.local:27017"}]}) }' --quiet
+        wait $$MONGOD_PID
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+        reservations:
+          cpus: '2.0'
+          memory: 4G
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "try { if (rs.status().ok) quit(0); quit(1) } catch(e) { quit(1) }"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 45s
+
   # Consul - Service Discovery
   consul:
     image: consul:1.15
@@ -8,15 +49,21 @@ services:
       - "8600:8600/udp"
     command: agent -server -ui -bootstrap-expect=1 -client=0.0.0.0
     environment:
-      # Reduce noisy deprecation warnings in terminal; options: trace|debug|info|warn|error
       CONSUL_LOG_LEVEL: warn
     networks:
-      - gomirai-network
+      gomirai-network:
+        aliases:
+          - consul-service.gomirai.svc.cluster.local
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
     healthcheck:
-      test: ["CMD", "consul", "members"]
+      test: ["CMD", "sh", "-c", "wget -qO- http://localhost:8500/v1/status/leader | grep -q '\"'"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 12
 
   # Zookeeper - Required for Kafka
   zookeeper:
@@ -25,15 +72,16 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
-    ports:
-      - "2181:2181"
     networks:
-      - gomirai-network
+      gomirai-network:
+        aliases:
+          - zookeeper-service.gomirai.svc.cluster.local
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      # This Confluent image may disable "ruok"; "srvr" is enabled by default.
+      test: ["CMD", "sh", "-c", "echo srvr | nc -w 2 localhost 2181 | grep -qi 'zookeeper version'"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 12
 
   # Kafka - Message Broker
   kafka:
@@ -47,52 +95,31 @@ services:
       - "29092:29092"
     environment:
       KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper-service.gomirai.svc.cluster.local:2181
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-service.gomirai.svc.cluster.local:29092,PLAINTEXT_HOST://kafka-service.gomirai.svc.cluster.local:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-      KAFKA_CREATE_TOPICS: "notification.events:3:1,driver.booking.offer.batch:3:1"
+      KAFKA_ZOOKEEPER_SESSION_TIMEOUT_MS: 60000
+      KAFKA_CREATE_TOPICS: "notification.events:6:1,driver.booking.offer.batch:6:1,driver.location.update:6:1"
     networks:
-      - gomirai-network
+      gomirai-network:
+        aliases:
+          - kafka-service.gomirai.svc.cluster.local
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "9092"]
       interval: 30s
       timeout: 5s
       retries: 5
-      start_period: 30s
-
-  # Notification Service
-  notification-service:
-    build:
-      context: .
-      dockerfile: NotificationService/Dockerfile
-    container_name: notification-service
-    ports:
-      - "8090:8090"
-    depends_on:
-      consul:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    environment:
-      SPRING_DATA_MONGODB_URI: ${NOTIFICATION_MONGODB_URI}
-      SPRING_DATA_MONGODB_DATABASE: gomirai_notification
-      SECURITY_JWT_SECRET: ${JWT_SECRET}
-      SPRING_CLOUD_CONSUL_HOST: consul
-      SPRING_CLOUD_CONSUL_PORT: 8500
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      SERVER_PORT: 8090
-      SPRING_KAFKA_CONSUMER_GROUP_ID: notification-service
-      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
-      SECURITY_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
-    networks:
-      - gomirai-network
-    restart: on-failure
 
   # Nginx Reverse Proxy
-  # Using static config with Docker DNS resolver
   nginx:
     image: nginx:alpine
     container_name: nginx
@@ -102,297 +129,218 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
       - api-gateway
-      - notification-service
     networks:
       - gomirai-network
-    restart: always
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
 
   # API Gateway
   api-gateway:
     build:
-      context: .  # Build from root to access common-lib
+      context: .
       dockerfile: ApiGateway/Dockerfile
-    container_name: api-gateway
-    ports:
-      - "8080:8080"
     depends_on:
       consul:
         condition: service_healthy
     environment:
-      SPRING_CLOUD_CONSUL_HOST: consul
-      SPRING_CLOUD_CONSUL_PORT: 8500
+      SPRING_CLOUD_CONSUL_HOST: ${SPRING_CLOUD_CONSUL_HOST:-consul-service.gomirai.svc.cluster.local}
+      SPRING_CLOUD_CONSUL_PORT: ${SPRING_CLOUD_CONSUL_PORT:-8500}
       SECURITY_JWT_SECRET: ${JWT_SECRET}
       SECURITY_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
-      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
+      JAVA_OPTS: "-Xms768m -Xmx768m -XX:+UseG1GC"
     networks:
       - gomirai-network
-    restart: on-failure
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
 
-  # Auth Service
-  auth-service:
+  # Identity Service
+  identity-service:
     build:
-      context: .  # Build from root to access common-lib
-      dockerfile: AuthService/Dockerfile
-    container_name: auth-service
-    expose:
-      - "8081"  # Chỉ expose trong internal network
+      context: .
+      dockerfile: IdentityService/Dockerfile
     depends_on:
       consul:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      mongo:
+        condition: service_healthy
     environment:
-      SPRING_DATA_MONGODB_URI: ${AUTH_MONGODB_URI}
+      SPRING_DATA_MONGODB_URI: ${USER_MONGODB_URI:-mongodb://mongodb-service.gomirai.svc.cluster.local:27017/user_db?replicaSet=rs0}
       SECURITY_JWT_SECRET: ${JWT_SECRET}
-      SECURITY_PASSWORD_BCRYPT_STRENGTH: ${SECURITY_PASSWORD_BCRYPT_STRENGTH:-10}
-      SPRING_CLOUD_CONSUL_HOST: consul
-      SPRING_CLOUD_CONSUL_PORT: 8500
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      # Google OAuth
+      SECURITY_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      SPRING_CLOUD_CONSUL_HOST: ${SPRING_CLOUD_CONSUL_HOST:-consul-service.gomirai.svc.cluster.local}
+      SPRING_CLOUD_CONSUL_PORT: ${SPRING_CLOUD_CONSUL_PORT:-8500}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:-kafka-service.gomirai.svc.cluster.local:9092}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
-      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
-      SECURITY_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      JAVA_OPTS: "-Xms768m -Xmx768m -XX:+UseG1GC"
     networks:
       - gomirai-network
-    restart: on-failure
-
-  # User Service
-  user-service:
-    build:
-      context: .  # Build from root to access common-lib
-      dockerfile: UserService/Dockerfile
-    container_name: user-service
-    expose:
-      - "8082"  # Chỉ expose trong internal network
-    depends_on:
-      consul:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    environment:
-      SPRING_DATA_MONGODB_URI: ${USER_MONGODB_URI}
-      SECURITY_JWT_SECRET: ${JWT_SECRET}
-      SECURITY_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
-      SPRING_CLOUD_CONSUL_HOST: consul
-      SPRING_CLOUD_CONSUL_PORT: 8500
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
-    networks:
-      - gomirai-network
-    restart: on-failure
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
 
   # Driver Service
   driver-service:
     build:
-      context: .  # Build from root to access common-lib
+      context: .
       dockerfile: DriverService/Dockerfile
-    container_name: driver-service
-    expose:
-      - "8084"
     depends_on:
       consul:
+        condition: service_healthy
+      mongo:
         condition: service_healthy
       kafka:
         condition: service_healthy
     environment:
-      SPRING_DATA_MONGODB_URI: ${DRIVER_MONGODB_URI}
+      SPRING_DATA_MONGODB_URI: ${DRIVER_MONGODB_URI:-mongodb://mongodb-service.gomirai.svc.cluster.local:27017/driver_db?replicaSet=rs0}
       SECURITY_JWT_SECRET: ${JWT_SECRET}
       SECURITY_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
-      SPRING_CLOUD_CONSUL_HOST: consul
-      SPRING_CLOUD_CONSUL_PORT: 8500
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
+      SPRING_CLOUD_CONSUL_HOST: ${SPRING_CLOUD_CONSUL_HOST:-consul-service.gomirai.svc.cluster.local}
+      SPRING_CLOUD_CONSUL_PORT: ${SPRING_CLOUD_CONSUL_PORT:-8500}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:-kafka-service.gomirai.svc.cluster.local:9092}
+      JAVA_OPTS: "-Xms768m -Xmx768m -XX:+UseG1GC"
     networks:
       - gomirai-network
-    restart: on-failure
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
 
-  # Payment Service
-  payment-service:
+  # Ride Service (merged Booking, Pricing, Map)
+  ride-service:
     build:
-      context: .  # Build from root to access common-lib
-      dockerfile: PaymentService/Dockerfile
-    container_name: payment-service
-    expose:
-      - "8083"  # Internal only
+      context: .
+      dockerfile: RideService/Dockerfile
     depends_on:
       consul:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       kafka:
         condition: service_healthy
     environment:
-      SPRING_DATA_MONGODB_URI: ${PAYMENT_MONGODB_URI}
+      SPRING_DATA_MONGODB_URI: ${BOOKING_MONGODB_URI:-mongodb://mongodb-service.gomirai.svc.cluster.local:27017/booking_db?replicaSet=rs0}
+      PRICING_MONGODB_URI: ${PRICING_MONGODB_URI:-mongodb://mongodb-service.gomirai.svc.cluster.local:27017/pricing_db?replicaSet=rs0}
+      MAPBOX_ACCESS_TOKEN: ${MAPBOX_ACCESS_TOKEN}
+      SPRING_DATA_REDIS_HOST: ${SPRING_DATA_REDIS_HOST:-redis.gomirai.svc.cluster.local}
+      SPRING_REDIS_URL: ${SPRING_REDIS_URL:-redis://redis.gomirai.svc.cluster.local:6379}
       SECURITY_JWT_SECRET: ${JWT_SECRET}
       SECURITY_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
-      SPRING_CLOUD_CONSUL_HOST: consul
-      SPRING_CLOUD_CONSUL_PORT: 8500
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      # VNPay Configuration
-      VNPAY_TMN_CODE: ${VNPAY_TMN_CODE}
-      VNPAY_HASH_SECRET: ${VNPAY_HASH_SECRET}
-      VNPAY_PAYMENT_URL: ${VNPAY_PAYMENT_URL:-https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
-      VNPAY_RETURN_URL: ${VNPAY_RETURN_URL:-http://localhost:3000/payment/vnpay/result}
-      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
+      SPRING_CLOUD_CONSUL_HOST: ${SPRING_CLOUD_CONSUL_HOST:-consul-service.gomirai.svc.cluster.local}
+      SPRING_CLOUD_CONSUL_PORT: ${SPRING_CLOUD_CONSUL_PORT:-8500}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:-kafka-service.gomirai.svc.cluster.local:9092}
+      SPRING_CACHE_TYPE: redis
+      JAVA_OPTS: "-Xms1500m -Xmx1500m -XX:+UseG1GC"
     networks:
       - gomirai-network
-    restart: on-failure
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+
+  # Communication Service (merged Notification, Review)
+  communication-service:
+    build:
+      context: .
+      dockerfile: CommunicationService/Dockerfile
+    depends_on:
+      consul:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      SPRING_DATA_MONGODB_URI: ${NOTIFICATION_MONGODB_URI:-mongodb://mongodb-service.gomirai.svc.cluster.local:27017/notification_db?replicaSet=rs0}
+      REVIEW_MONGODB_URI: ${REVIEW_MONGODB_URI:-mongodb://mongodb-service.gomirai.svc.cluster.local:27017/review_db?replicaSet=rs0}
+      SECURITY_JWT_SECRET: ${JWT_SECRET}
+      SECURITY_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      SPRING_CLOUD_CONSUL_HOST: ${SPRING_CLOUD_CONSUL_HOST:-consul-service.gomirai.svc.cluster.local}
+      SPRING_CLOUD_CONSUL_PORT: ${SPRING_CLOUD_CONSUL_PORT:-8500}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:-kafka-service.gomirai.svc.cluster.local:9092}
+      JAVA_OPTS: "-Xms768m -Xmx768m -XX:+UseG1GC"
+    networks:
+      - gomirai-network
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
 
   # Tracking Service
   tracking-service:
     build:
       context: .
       dockerfile: TrackingService/Dockerfile
-    container_name: tracking-service
-    ports:
-      - "8085:8085"
     depends_on:
-      consul:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
       redis:
         condition: service_healthy
-    environment:
-      # ✅ Using Redis Cloud URL
-      SPRING_REDIS_URL: ${SPRING_REDIS_URL}
-      SECURITY_JWT_SECRET: ${JWT_SECRET}
-      SECURITY_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
-      SPRING_CLOUD_CONSUL_HOST: consul
-      SPRING_CLOUD_CONSUL_PORT: 8500
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
-    networks:
-      - gomirai-network
-    restart: on-failure
-
-  # Map Service
-  map-service:
-    build:
-      context: .  # Build from root to access common-lib
-      dockerfile: MapService/Dockerfile
-    container_name: map-service
-    # ✅ SECURITY: Không expose port ra ngoài, chỉ giao tiếp internal qua API Gateway
-    expose:
-      - "8086"  # Chỉ expose trong internal network
-    depends_on:
       consul:
         condition: service_healthy
       kafka:
         condition: service_healthy
     environment:
-      # Mapbox API Token
-      MAPBOX_ACCESS_TOKEN: ${MAPBOX_ACCESS_TOKEN}
-      # Security
+      SPRING_DATA_REDIS_HOST: ${SPRING_DATA_REDIS_HOST:-redis.gomirai.svc.cluster.local}
+      SPRING_REDIS_URL: ${SPRING_REDIS_URL:-redis://redis.gomirai.svc.cluster.local:6379}
       SECURITY_JWT_SECRET: ${JWT_SECRET}
       SECURITY_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
-      # Infrastructure
-      SPRING_CLOUD_CONSUL_HOST: consul
-      SPRING_CLOUD_CONSUL_PORT: 8500
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
+      SPRING_CLOUD_CONSUL_HOST: ${SPRING_CLOUD_CONSUL_HOST:-consul-service.gomirai.svc.cluster.local}
+      SPRING_CLOUD_CONSUL_PORT: ${SPRING_CLOUD_CONSUL_PORT:-8500}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:-kafka-service.gomirai.svc.cluster.local:9092}
+      JAVA_OPTS: "-Xms768m -Xmx768m -XX:+UseG1GC"
     networks:
       - gomirai-network
-    restart: on-failure
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
 
-  # Redis - For Tracking Service (Local Development)
+  # Redis
   redis:
     image: redis:7.2-alpine
     container_name: redis
     ports:
       - "6379:6379"
     networks:
-      - gomirai-network
+      gomirai-network:
+        aliases:
+          - redis.gomirai.svc.cluster.local
+          - redis-service.gomirai.svc.cluster.local
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 3G
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Pricing Service
-  pricing-service:
-    build:
-      context: .
-      dockerfile: PricingService/Dockerfile
-    container_name: pricing-service
-    expose:
-      - "8087"
-    depends_on:
-      consul:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    environment:
-      SPRING_DATA_MONGODB_URI: ${PRICING_MONGODB_URI}
-      SECURITY_JWT_SECRET: ${JWT_SECRET}
-      SECURITY_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
-      SPRING_CLOUD_CONSUL_HOST: consul
-      SPRING_CLOUD_CONSUL_PORT: 8500
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      SERVER_PORT: 8087
-      SPRING_PROFILES_ACTIVE: dev
-      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
-    networks:
-      - gomirai-network
-    restart: on-failure
-
-  # Booking Service
-  booking-service:
-    build:
-      context: .
-      dockerfile: BookingService/Dockerfile
-    container_name: booking-service
-    expose:
-      - "8088"
-    depends_on:
-      consul:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    environment:
-      SPRING_DATA_MONGODB_URI: ${BOOKING_MONGODB_URI}
-      SECURITY_JWT_SECRET: ${JWT_SECRET}
-      SECURITY_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
-      SPRING_CLOUD_CONSUL_HOST: consul
-      SPRING_CLOUD_CONSUL_PORT: 8500
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      SERVER_PORT: 8088
-      SPRING_PROFILES_ACTIVE: dev
-      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
-    networks:
-      - gomirai-network
-    restart: on-failure
-    deploy:
-      replicas: 1
-
-  # Review Service
-  review-service:
-    build:
-      context: .
-      dockerfile: ReviewService/Dockerfile
-    container_name: review-service
-    expose:
-      - "8089"
-    depends_on:
-      consul:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    environment:
-      SPRING_DATA_MONGODB_URI: ${REVIEW_MONGODB_URI}
-      SECURITY_JWT_SECRET: ${JWT_SECRET}
-      SECURITY_INTERNAL_API_KEY: ${INTERNAL_API_KEY}
-      SPRING_CLOUD_CONSUL_HOST: consul
-      SPRING_CLOUD_CONSUL_PORT: 8500
-      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      SERVER_PORT: 8089
-      SPRING_PROFILES_ACTIVE: dev
-      MANAGEMENT_TRACING_SAMPLING_PROBABILITY: "0.05"
-    networks:
-      - gomirai-network
-    restart: on-failure
-
-
-
 networks:
   gomirai-network:
     driver: bridge
+
+volumes:
+  mongo-data:

@@ -1,0 +1,719 @@
+{
+  "info": {
+    "_postman_id": "afa4c1e7-04a6-4a58-9144-a49e266e6233",
+    "name": "6. Pricing Service",
+    "description": "Bộ test API Pricing: Tạo Rule (Admin), Ước tính giá (Public), Tính giá cuối cùng (Internal/Cheat Detection).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "39391901",
+    "_collection_link": "https://go.postman.co/collection/39391901-afa4c1e7-04a6-4a58-9144-a49e266e6233?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "1. Admin & Rule Management (Roles: ADMIN)",
+      "item": [
+        {
+          "name": "1.1 ✅ Create Pricing Rule (Success)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test(\"Rule ID is generated\", function () {",
+                  "    pm.expect(jsonData.ruleId).to.be.a('string').and.to.have.lengthOf(36);",
+                  "});",
+                  "// Lưu Rule ID để sử dụng cho bước Update",
+                  "pm.environment.set(\"pricing_rule_id\", jsonData.ruleId);",
+                  "pm.environment.set(\"base_fare_motor\", jsonData.baseFare); // Lưu giá cơ bản để ước tính"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ruleId\": null,\n  \"vehicleType\": \"MOTORBIKE\",\n  \"baseFare\": 10000,\n  \"perKmRate\": 5000,\n  \"perMinuteRate\": 1000,\n  \"surgeMultiplier\": 1.0,\n  \"region\": \"HCM\",\n  \"active\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pricing/rules",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "pricing",
+                "rules"
+              ]
+            },
+            "description": "Test Case 7: Tạo rule thành công (Cần ROLE_ADMIN)."
+          },
+          "response": []
+        },
+        {
+          "name": "1.2 ✅ List All Pricing Rules",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test(\"Response is an array\", function () {",
+                  "    pm.expect(jsonData).to.be.an('array').with.length.above(0);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/pricing/rules",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "pricing",
+                "rules"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "1.3 ✅ Update Pricing Rule",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test(\"Kiểm tra baseFare đã cập nhật\", function () {",
+                  "    pm.expect(jsonData.baseFare).to.eql(12000);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleType\": \"MOTORBIKE\",\n  \"baseFare\": 12000,\n  \"perKmRate\": 5500,\n  \"perMinuteRate\": 1200,\n  \"surgeMultiplier\": 1.2,\n  \"region\": \"HCM\",\n  \"active\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pricing/rules/{{pricing_rule_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "pricing",
+                "rules",
+                "{{pricing_rule_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "1.4 ❌ Create Rule - Unauthorized (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Test Case 8: Chặn non-ADMIN (403 Forbidden)\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{auth_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleType\": \"CAR_4_SEAT\",\n  \"baseFare\": 20000,\n  \"perKmRate\": 8000,\n  \"perMinuteRate\": 2000,\n  \"surgeMultiplier\": 1.0,\n  \"region\": \"HN\",\n  \"active\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pricing/rules",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "pricing",
+                "rules"
+              ]
+            },
+            "description": "Test Case 8: Dùng token user thường để gọi API ADMIN."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Estimate Pricing (Public API)",
+      "item": [
+        {
+          "name": "2.1 ✅ Estimate Pricing - Success",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Test Case 1: Ước tính thành công (200 OK)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test(\"Giá ước tính > 0 và có Rule ID\", function () {",
+                  "    pm.expect(jsonData.estimatedFare).to.be.above(0);",
+                  "    pm.expect(jsonData.appliedRuleId).to.be.a('string');",
+                  "});",
+                  "// Tính tay để kiểm tra sơ bộ (12000 + 5.5*5500 + 20*1200) * 1.2 = ~ 77.000",
+                  "// pm.expect(jsonData.estimatedFare).to.be.above(70000); // Thử so sánh với tính tay"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleType\": \"MOTORBIKE\",\n  \"distanceKm\": 5.5,\n  \"durationMinute\": 20,\n  \"region\": \"HCM\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pricing/estimate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "pricing",
+                "estimate"
+              ]
+            },
+            "description": "Test Case 1: Ước tính giá cước (Public API)."
+          },
+          "response": []
+        },
+        {
+          "name": "2.2 ❌ Estimate Pricing - Missing vehicleType (Validation)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Test Case 2: Chặn thiếu vehicleType (400)\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test(\"Có lỗi validation cho vehicleType\", function () {",
+                  "    pm.expect(jsonData.errors.vehicleType).to.include(\"required\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"distanceKm\": 5.5,\n  \"durationMinute\": 20,\n  \"region\": \"HCM\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pricing/estimate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "pricing",
+                "estimate"
+              ]
+            },
+            "description": "Test Case 2: Thiếu vehicleType -> Validation Error."
+          },
+          "response": []
+        },
+        {
+          "name": "2.3 ❌ Estimate Pricing - Invalid distance (Negative)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Test Case 3: Chặn khoảng cách âm (400)\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test(\"Có lỗi validation cho distanceKm\", function () {",
+                  "    pm.expect(jsonData.errors.distanceKm).to.include(\"> 0\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleType\": \"MOTORBIKE\",\n  \"distanceKm\": -5.0,\n  \"durationMinute\": 20,\n  \"region\": \"HCM\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pricing/estimate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "pricing",
+                "estimate"
+              ]
+            },
+            "description": "Test Case 3: distanceKm = -5 -> Validation Error."
+          },
+          "response": []
+        },
+        {
+          "name": "2.4 ❌ Estimate Pricing - No Pricing Rule (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Test Case 4: Không tìm thấy Rule (404)\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "pm.test(\"Có mã lỗi PRICING_RULE_NOT_FOUND\", function () {",
+                  "    pm.expect(pm.response.text()).to.include(\"PRICING_RULE_NOT_FOUND\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleType\": \"CAR_7_SEAT\",\n  \"distanceKm\": 5.5,\n  \"durationMinute\": 20,\n  \"region\": \"HANOI\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pricing/estimate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "pricing",
+                "estimate"
+              ]
+            },
+            "description": "Test Case 4: Dùng loại xe/khu vực không có rule."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Calculate Final Pricing (Roles: BOOKING_SERVICE)",
+      "item": [
+        {
+          "name": "3.1 ✅ Calculate Final - Success",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Tính giá cuối cùng thành công (200 OK)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test(\"Giá cuối cùng > Giá ước tính (Do surge)\", function () {",
+                  "    pm.expect(jsonData.estimatedFare).to.be.above(0);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{booking_service_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rideId\": \"ride-12345\",\n  \"vehicleType\": \"MOTORBIKE\",\n  \"actualDistanceKm\": 5.8,\n  \"actualDurationMinute\": 22,\n  \"region\": \"HCM\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pricing/calculate-final?estimatedDistanceKm=5.5&estimatedDurationMinute=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "pricing",
+                "calculate-final"
+              ],
+              "query": [
+                {
+                  "key": "estimatedDistanceKm",
+                  "value": "5.5"
+                },
+                {
+                  "key": "estimatedDurationMinute",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Sử dụng {{booking_service_token}}."
+          },
+          "response": []
+        },
+        {
+          "name": "3.2 ❌ Cheat Detection - Distance (409 Conflict)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Test Case 5: Bắt lỗi cheat khoảng cách (409)\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "pm.test(\"Có mã lỗi POSSIBLE_CHEAT_DISTANCE\", function () {",
+                  "    pm.expect(pm.response.text()).to.include(\"POSSIBLE_CHEAT_DISTANCE\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{booking_service_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rideId\": \"ride-cheat-dist\",\n  \"vehicleType\": \"MOTORBIKE\",\n  \"actualDistanceKm\": 2.0,\n  \"actualDurationMinute\": 22,\n  \"region\": \"HCM\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pricing/calculate-final?estimatedDistanceKm=10.0&estimatedDurationMinute=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "pricing",
+                "calculate-final"
+              ],
+              "query": [
+                {
+                  "key": "estimatedDistanceKm",
+                  "value": "10.0"
+                },
+                {
+                  "key": "estimatedDurationMinute",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Test Case 5: Actual 2.0km < 10.0km * 0.5 (Cheat Detection)."
+          },
+          "response": []
+        },
+        {
+          "name": "3.3 ❌ Calculate Final - Unauthorized (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Test Case 6: Chặn user thường (403 Forbidden)\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{auth_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rideId\": \"ride-unauth\",\n  \"vehicleType\": \"MOTORBIKE\",\n  \"actualDistanceKm\": 5.8,\n  \"actualDurationMinute\": 22,\n  \"region\": \"HCM\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/pricing/calculate-final?estimatedDistanceKm=5.5&estimatedDurationMinute=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "pricing",
+                "calculate-final"
+              ],
+              "query": [
+                {
+                  "key": "estimatedDistanceKm",
+                  "value": "5.5"
+                },
+                {
+                  "key": "estimatedDurationMinute",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Test Case 6: Dùng token user thường để gọi API nội bộ."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Debug API",
+      "item": [
+        {
+          "name": "4.1 Debug Auth",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200 OK\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "var jsonData = pm.response.json();",
+                  "pm.test(\"Authenticated is false (No Auth Header)\", function () {",
+                  "    pm.expect(jsonData.authenticated).to.eql(false);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/pricing/debug/auth",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "pricing",
+                "debug",
+                "auth"
+              ]
+            },
+            "description": "Kiểm tra khi không có Authorization Header."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080",
+      "type": "string"
+    }
+  ]
+}

@@ -1,8 +1,10 @@
 package com.gomirai.tracking.config;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.client.loadbalancer.LoadBalanced;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestTemplate;
 import com.gomirai.common.security.InternalApiKeyInterceptor;
 import org.springframework.beans.factory.annotation.Value;
@@ -14,10 +16,19 @@ public class RestTemplateConfig {
     @Value("${security.internal.api-key}")
     private String internalApiKey;
 
+    @Value("${tracking.rest-template.connect-timeout-ms:2000}")
+    private int connectTimeoutMs;
+
+    @Value("${tracking.rest-template.read-timeout-ms:5000}")
+    private int readTimeoutMs;
+
     @Bean
     @LoadBalanced
     public RestTemplate restTemplate() {
-        RestTemplate restTemplate = new RestTemplate();
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(connectTimeoutMs);
+        factory.setReadTimeout(readTimeoutMs);
+        RestTemplate restTemplate = new RestTemplate(factory);
         restTemplate.setInterceptors(Collections.singletonList(new InternalApiKeyInterceptor(internalApiKey)));
         return restTemplate;
     }

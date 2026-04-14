@@ -1,0 +1,28 @@
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: gomirai-services-monitoring
+  namespace: gomirai
+spec:
+  selector:
+    matchLabels:
+      # Scrape all pods with these labels
+      app: api-gateway
+  endpoints:
+  - port: 8080
+    path: /actuator/prometheus
+    interval: 30s
+---
+apiVersion: monitoring.googleapis.com/v1
+kind: PodMonitoring
+metadata:
+  name: gomirai-backend-monitoring
+  namespace: gomirai
+spec:
+  selector:
+    matchExpressions:
+    - {key: app, operator: In, values: [identity-service, ride-service, driver-service, payment-service, tracking-service, communication-service]}
+  endpoints:
+  - port: 8081 # Common port for backend services in this repo
+    path: /actuator/prometheus
+    interval: 30s

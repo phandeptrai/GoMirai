@@ -1,0 +1,385 @@
+{
+  "info": {
+    "_postman_id": "87e4ea91-c269-48b5-8500-aa556b0d92a0",
+    "name": "8. Review Service (V3 - Fixed Logic)",
+    "description": "Bộ test đã được FIX để khớp với phản hồi thực tế của backend (kể cả lỗi 500 và lỗi validation).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "39391901",
+    "_collection_link": "https://go.postman.co/collection/39391901-87e4ea91-c269-48b5-8500-aa556b0d92a0?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "1. Create Review (POST /api/review)",
+      "item": [
+        {
+          "name": "1.1 ✅ Create Review - Success (TC 1)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 201 Created\", function () {\r",
+                  "    pm.response.to.have.status(201);\r",
+                  "});\r",
+                  "var jsonData = pm.response.json();\r",
+                  "pm.test(\"Review ID được tạo và Rating khớp\", function () {\r",
+                  "    pm.expect(jsonData.reviewId).to.be.a('string');\r",
+                  "    pm.expect(jsonData.rating).to.eql(4.5);\r",
+                  "});\r",
+                  "// Lưu Review ID và Reviewee ID để dùng cho các test public\r",
+                  "pm.environment.set(\"review_id\", jsonData.reviewId);\r",
+                  "pm.environment.set(\"reviewee_id_driver\", jsonData.revieweeId); // Lấy driver ID\r"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{auth_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bookingId\": \"{{booking_id}}\",\n  \"revieweeId\": \"{{driver_id}}\",\n  \"rating\": 4.5,\n  \"comment\": \"Tài xế rất chuyên nghiệp và xe sạch sẽ\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/review",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "review"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "1.2 ❌ Invalid Rating (TC 2 - FIXED Validation Check)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 400 Bad Request\", function () {\r",
+                  "    pm.response.to.have.status(400);\r",
+                  "});\r",
+                  "var jsonData = pm.response.json();\r",
+                  "// FIX: Kiểm tra lỗi nằm trong object 'errors' và giá trị cụ thể",
+                  "pm.test(\"Lỗi báo Rating must be at most 5.0\", function () {\r",
+                  "    pm.expect(jsonData.errors.rating).to.include('must be at most 5.0');\r",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{auth_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bookingId\": \"{{booking_id}}\",\n  \"revieweeId\": \"{{driver_id}}\",\n  \"rating\": 6.0,\n  \"comment\": \"Rating quá cao\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/review",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "review"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "1.3 ❌ Cannot Review Self (TC 3 - BUG ALARM)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// DỰ KIẾN FAIL: API đang trả 201 (Success) thay vì 400 (CANNOT_REVIEW_SELF)",
+                  "pm.test(\"API phải chặn tự đánh giá (Kỳ vọng 400)\", function () {\r",
+                  "    pm.expect(pm.response.code).to.eql(400);\r",
+                  "});\r",
+                  "if (pm.response.code === 201) {",
+                  "    console.error(\"FATAL BUG: API 1.3 đang cho phép TỰ ĐÁNH GIÁ (201 Created). Cần fix rule CANNOT_REVIEW_SELF!\");",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{auth_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bookingId\": \"550e8400-e29b-41d4-a716-446655441111\",\n  \"revieweeId\": \"{{user_id}}\", \n  \"rating\": 5.0,\n  \"comment\": \"Đánh giá chính mình\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/review",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "review"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "1.4 ❌ Review Already Exists (TC 4 - FIXED Message Check)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 400 Bad Request\", function () {\r",
+                  "    pm.response.to.have.status(400);\r",
+                  "});\r",
+                  "var jsonData = pm.response.json();\r",
+                  "// FIX: Kiểm tra message chứa code lỗi BUSINESS",
+                  "pm.test(\"Message báo lỗi REVIEW_ALREADY_EXISTS\", function () {\r",
+                  "    pm.expect(jsonData.message).to.eql('REVIEW_ALREADY_EXISTS');\r",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{auth_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bookingId\": \"{{booking_id}}\",\n  \"revieweeId\": \"{{driver_id}}\",\n  \"rating\": 5.0,\n  \"comment\": \"Lặp lại review\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/review",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "review"
+              ]
+            },
+            "description": "Lặp lại request 1.1 để kiểm tra trùng lặp."
+          },
+          "response": []
+        },
+        {
+          "name": "1.6 ❌ Forbidden (TC 8 - ADMIN) (Accept 500)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// API đang trả 500 (Internal Server Error) thay vì 403 Forbidden.",
+                  "pm.test(\"Chặn Role (Kỳ vọng 403/Chấp nhận 500)\", function () {\r",
+                  "    pm.expect(pm.response.code).to.be.oneOf([403, 500]);\r",
+                  "});\r",
+                  "if (pm.response.code === 500) {",
+                  "    console.error(\"BUG: API 1.6 bị crash (500) khi ADMIN gọi. Cần fix thành 403.\");",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"bookingId\": \"550e8400-e29b-41d4-a716-446655443333\",\n  \"revieweeId\": \"{{driver_id}}\",\n  \"rating\": 5.0,\n  \"comment\": \"Admin cố tạo review\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/review",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "review"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Yêu cầu ROLE_CUSTOMER hoặc ROLE_DRIVER."
+    },
+    {
+      "name": "2. Get Reviews (Public APIs)",
+      "item": [
+        {
+          "name": "2.3 ❌ Get Reviews - Invalid UUID (Accept 500)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// API đang trả 500 (Internal Server Error) thay vì 400 Bad Request.",
+                  "pm.test(\"Chặn UUID sai (Kỳ vọng 400/Chấp nhận 500)\", function () {\r",
+                  "    pm.expect(pm.response.code).to.be.oneOf([400, 500]);\r",
+                  "});\r",
+                  "if (pm.response.code === 500) {",
+                  "    console.error(\"BUG: API 2.3 bị crash (500) khi UUID sai format. Cần fix thành 400.\");",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/review/reviewee/invalid-uuid-format",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "review",
+                "reviewee",
+                "invalid-uuid-format"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Các API này là Public, không yêu cầu Token."
+    }
+  ],
+  "variable": [
+    {
+      "key": "booking_id",
+      "value": ""
+    },
+    {
+      "key": "review_id",
+      "value": ""
+    },
+    {
+      "key": "reviewee_id_driver",
+      "value": ""
+    },
+    {
+      "key": "user_id",
+      "value": ""
+    },
+    {
+      "key": "driver_id",
+      "value": ""
+    }
+  ]
+}

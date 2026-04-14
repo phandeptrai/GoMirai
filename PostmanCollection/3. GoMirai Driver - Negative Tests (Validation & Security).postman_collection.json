@@ -1,0 +1,285 @@
+{
+  "info": {
+    "_postman_id": "a4d30a26-6bcc-4d72-811d-14b570e5d7c1",
+    "name": "3. GoMirai Driver - Negative Tests (Validation & Security)",
+    "description": "Bộ test các trường hợp lỗi: Validate sai, sai quyền (403), sai logic nghiệp vụ.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "39391901",
+    "_collection_link": "https://go.postman.co/collection/39391901-a4d30a26-6bcc-4d72-811d-14b570e5d7c1?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "1. Validation Errors (Input Data)",
+      "item": [
+        {
+          "name": "Apply - Missing Required Fields",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Hệ thống bắt lỗi thiếu trường (400)\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "var jsonData = pm.response.json();",
+                  "pm.test(\"Chi tiết lỗi trả về đúng\", function () {",
+                  "    // Kiểm tra xem có field 'errors' không (theo mục 4.1 tài liệu)",
+                  "    pm.expect(jsonData).to.have.property(\"errors\");",
+                  "    ",
+                  "    // Kiểm tra cụ thể lỗi thiếu licenseNumber",
+                  "    // (Tùy field name trong code bạn, ví dụ 'licenseNumber' hoặc 'license_number')",
+                  "    pm.expect(jsonData.errors).to.have.property(\"licenseNumber\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{auth_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicleBrand\": \"Toyota\" \n  // Cố tình thiếu licenseNumber, plateNumber...\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/drivers/apply",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "drivers",
+                "apply"
+              ]
+            },
+            "description": "Test trường hợp gửi thiếu thông tin bắt buộc."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Vehicle - Empty Body",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Chặn update rỗng (400)\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{auth_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/drivers/me/vehicle",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "drivers",
+                "me",
+                "vehicle"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. Security Errors (Authorization)",
+      "item": [
+        {
+          "name": "User tries to Approve Driver (Forbidden)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Chặn User thường gọi API Admin (500)\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});",
+                  "",
+                  "var jsonData = pm.response.json();",
+                  "pm.test(\"Thông báo lỗi Forbidden\", function () {",
+                  "    // Check theo tài liệu mục 4.3",
+                  "    pm.expect(jsonData.error).to.eql(\"Forbidden\");",
+                  "});"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{auth_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/drivers/{{driver_id}}/approve",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "drivers",
+                "{{driver_id}}",
+                "approve"
+              ]
+            },
+            "description": "QUAN TRỌNG: Request này dùng {{auth_token}} (User thường) thay vì Admin token. Phải bị chặn."
+          },
+          "response": []
+        },
+        {
+          "name": "User tries to List All Drivers",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Chặn User thường xem danh sách (403)\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{auth_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/drivers",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "drivers"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Not Found Errors",
+      "item": [
+        {
+          "name": "Get Fake Driver Rating",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Báo lỗi không tìm thấy (404)\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "",
+                  "var jsonData = pm.response.json();",
+                  "pm.test(\"Message chứa thông tin lỗi\", function () {",
+                  "    pm.expect(jsonData.error).to.include(\"Not Found\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{auth_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/drivers/00000000-0000-0000-0000-000000000000/rating",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "drivers",
+                "00000000-0000-0000-0000-000000000000",
+                "rating"
+              ]
+            },
+            "description": "Test với UUID fake để check lỗi 404."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

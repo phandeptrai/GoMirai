@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const BASE_URL = 'http://35.190.236.150';
+const BASE_URL = process.env.BASE_URL || 'http://localhost:8080';
 const CSV_PATH = path.join(__dirname, 'users_prepared.csv');
 
 async function callApi(endpoint, method, body, token) {

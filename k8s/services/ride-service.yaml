@@ -1,0 +1,134 @@
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# RIDE SERVICE (8088)
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ride-service
+  namespace: gomirai
+  labels:
+    app: ride-service
+    tier: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ride-service
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: ride-service
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: cloud.google.com/machine-family
+                    operator: In
+                    values:
+                      - n2
+      terminationGracePeriodSeconds: 45
+      # Faster in-cluster FQDN resolution (chaos / SLA stack: fewer search-list probes)
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
+      containers:
+        - name: ride-service
+          image: asia-southeast1-docker.pkg.dev/gomirai-prod/gomirai-repo/ride-service:latest
+          ports:
+            - containerPort: 8088
+              name: http
+          envFrom:
+            - configMapRef:
+                name: gomirai-config
+            - secretRef:
+                name: gomirai-secrets
+          resources:
+            requests:
+              memory: "1200Mi"
+              cpu: "800m"
+            limits:
+              memory: "2Gi"
+              cpu: "1500m"
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8088
+            failureThreshold: 60
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8088
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8088
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 10"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ride-service
+  namespace: gomirai
+spec:
+  selector:
+    app: ride-service
+  ports:
+    - port: 8088
+      targetPort: 8088
+      name: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ride-service-hpa
+  namespace: gomirai
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ride-service
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 45
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 300
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ride-service-pdb
+  namespace: gomirai
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: ride-service
+---
