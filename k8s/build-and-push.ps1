@@ -33,16 +33,16 @@ gcloud auth configure-docker "$REGION-docker.pkg.dev" --quiet
 
 # 4. Service list
 $SERVICES = @(
-    "auth-service",
-    "user-service",
+    "identity-service",
+    "identity-service",
     "payment-service",
     "driver-service",
     "tracking-service",
-    "map-service",
-    "pricing-service",
-    "booking-service",
-    "review-service",
-    "notification-service",
+    "ride-service",
+    "ride-service",
+    "ride-service",
+    "communication-service",
+    "communication-service",
     "api-gateway"
 )
 
@@ -58,7 +58,7 @@ if (-not (Test-Path $commonLibPom)) {
 }
 
 $mvnOnPath = Get-Command mvn -ErrorAction SilentlyContinue
-$mvnwAuth = Join-Path $repoRoot "AuthService\mvnw.cmd"
+$mvnwAuth = Join-Path $repoRoot "IdentityService\mvnw.cmd"
 
 if ($mvnOnPath) {
     Push-Location $commonLibPath
@@ -69,17 +69,17 @@ if ($mvnOnPath) {
         Pop-Location
     }
 } elseif (Test-Path $mvnwAuth) {
-    Write-Host "-> Using AuthService\mvnw.cmd (no system Maven on PATH)..." -ForegroundColor DarkGray
+    Write-Host "-> Using IdentityService\mvnw.cmd (no system Maven on PATH)..." -ForegroundColor DarkGray
     Set-Location $repoRoot
     & $mvnwAuth "-f" $commonLibPom "install" "-DskipTests"
     if ($LASTEXITCODE -ne 0) { throw "mvnw install failed for gomirai-common-lib" }
 } else {
-    throw "Need Maven: install Apache Maven on PATH, or ensure AuthService\mvnw.cmd exists."
+    throw "Need Maven: install Apache Maven on PATH, or ensure IdentityService\mvnw.cmd exists."
 }
 Set-Location $repoRoot
 
 foreach ($svc in $SERVICES) {
-    # Convert to PascalCase. E.g., auth-service -> AuthService
+    # Convert to PascalCase. E.g., identity-service -> IdentityService
     $folderName = ([System.Globalization.CultureInfo]::CurrentCulture.TextInfo.ToTitleCase($svc)).Replace("-", "")
     
     $folderPath = Join-Path $repoRoot $folderName

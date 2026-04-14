@@ -34,6 +34,8 @@ import com.gomirai.common.security.SecurityUtils;
 import com.gomirai.driver.service.DriverBookingService;
 import com.gomirai.driver.service.DriverProfileService;
 
+import io.github.resilience4j.bulkhead.annotation.Bulkhead;
+
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 
@@ -84,49 +86,58 @@ public class DriverProfileController {
 		this.securityUtils = securityUtils;
 	}
 
+	@Bulkhead(name = "driverRestApi")
 	@PostMapping("/apply")
 	public ResponseEntity<DriverProfileResponse> apply(@Valid @RequestBody DriverApplicationRequest request) {
 		DriverProfileResponse response = driverProfileService.apply(request);
 		return ResponseEntity.status(HttpStatus.CREATED).body(response);
 	}
 
+	@Bulkhead(name = "driverRestApi")
 	@GetMapping("/me")
 	public ResponseEntity<DriverProfileResponse> me() {
 		return ResponseEntity.ok(driverProfileService.getCurrentDriverProfile());
 	}
 
+	@Bulkhead(name = "driverRestApi")
 	@PutMapping("/me")
 	public ResponseEntity<DriverProfileResponse> updateProfile(
 			@Valid @RequestBody DriverProfileUpdateRequest request) {
 		return ResponseEntity.ok(driverProfileService.updateCurrentDriver(request));
 	}
 
+	@Bulkhead(name = "driverRestApi")
 	@GetMapping("/me/vehicle")
 	public ResponseEntity<DriverVehicleResponse> getVehicle() {
 		return ResponseEntity.ok(driverProfileService.getCurrentVehicle());
 	}
 
+	@Bulkhead(name = "driverRestApi")
 	@PutMapping("/me/vehicle")
 	public ResponseEntity<DriverVehicleResponse> updateVehicle(
 			@Valid @RequestBody DriverVehicleRequest request) {
 		return ResponseEntity.ok(driverProfileService.updateCurrentVehicle(request));
 	}
 
+	@Bulkhead(name = "driverRestApi")
 	@PatchMapping("/me/status/online")
 	public ResponseEntity<DriverStatusResponse> goOnline() {
 		return ResponseEntity.ok(driverProfileService.setAvailabilityOnline());
 	}
 
+	@Bulkhead(name = "driverRestApi")
 	@PatchMapping("/me/status/offline")
 	public ResponseEntity<DriverStatusResponse> goOffline() {
 		return ResponseEntity.ok(driverProfileService.setAvailabilityOffline());
 	}
 
+	@Bulkhead(name = "driverRestApi")
 	@GetMapping("/{driverId}/rating")
 	public ResponseEntity<DriverRatingResponse> getRating(@PathVariable("driverId") UUID driverId) {
 		return ResponseEntity.ok(driverProfileService.getRating(driverId));
 	}
 
+	@Bulkhead(name = "driverRestApi")
 	@GetMapping("/{driverId}")
 	public ResponseEntity<DriverProfileResponse> getProfile(@PathVariable("driverId") UUID driverId) {
 		return ResponseEntity.ok(driverProfileService.getProfile(driverId));
@@ -137,16 +148,19 @@ public class DriverProfileController {
 	 * driverId)
 	 * GET /api/drivers/user/{userId}
 	 */
+	@Bulkhead(name = "driverRestApi")
 	@GetMapping("/user/{userId}")
 	public ResponseEntity<DriverProfileResponse> getProfileByUserId(@PathVariable("userId") UUID userId) {
 		return ResponseEntity.ok(driverProfileService.getProfileByUserId(userId));
 	}
 
+	@Bulkhead(name = "driverRestApi")
 	@PostMapping("/bulk")
 	public ResponseEntity<List<DriverProfileResponse>> getProfilesByUserIds(@RequestBody List<UUID> userIds) {
 		return ResponseEntity.ok(driverProfileService.getProfilesByUserIds(userIds));
 	}
 
+	@Bulkhead(name = "driverRestApi")
 	@PostMapping("/bulk/by-driver-ids")
 	public ResponseEntity<List<DriverProfileResponse>> getProfilesByDriverIds(@RequestBody List<UUID> driverIds) {
 		return ResponseEntity.ok(driverProfileService.getProfilesByDriverIds(driverIds));
@@ -159,12 +173,14 @@ public class DriverProfileController {
 	 * PUBLIC API - for customer to view driver info during trip
 	 * GET /api/drivers/user/{userId}/public
 	 */
+	@Bulkhead(name = "driverRestApi")
 	@GetMapping("/user/{userId}/public")
 	public ResponseEntity<com.gomirai.driver.dto.response.DriverPublicInfoResponse> getDriverPublicInfo(
 			@PathVariable("userId") UUID userId) {
 		return ResponseEntity.ok(driverProfileService.getDriverPublicInfo(userId));
 	}
 
+	@Bulkhead(name = "driverRestApi")
 	@GetMapping
 	@PreAuthorize("hasRole('ADMIN')")
 	public ResponseEntity<Slice<DriverProfileResponse>> listByStatus(
@@ -174,24 +190,28 @@ public class DriverProfileController {
 		return ResponseEntity.ok(driverProfileService.listByStatus(status, pageable));
 	}
 
+	@Bulkhead(name = "driverRestApi")
 	@PatchMapping("/{driverId}/approve")
 	@PreAuthorize("hasRole('ADMIN')")
 	public ResponseEntity<DriverProfileResponse> approve(@PathVariable UUID driverId) {
 		return ResponseEntity.ok(driverProfileService.approve(driverId));
 	}
 
+	@Bulkhead(name = "driverRestApi")
 	@PatchMapping("/{driverId}/reject")
 	@PreAuthorize("hasRole('ADMIN')")
 	public ResponseEntity<DriverProfileResponse> reject(@PathVariable UUID driverId) {
 		return ResponseEntity.ok(driverProfileService.reject(driverId));
 	}
 
+	@Bulkhead(name = "driverRestApi")
 	@PatchMapping("/{driverId}/suspend")
 	@PreAuthorize("hasRole('ADMIN')")
 	public ResponseEntity<DriverProfileResponse> suspend(@PathVariable UUID driverId) {
 		return ResponseEntity.ok(driverProfileService.suspend(driverId));
 	}
 
+	@Bulkhead(name = "driverRestApi")
 	@PatchMapping("/{driverId}/unsuspend")
 	@PreAuthorize("hasRole('ADMIN')")
 	public ResponseEntity<DriverProfileResponse> unsuspend(@PathVariable UUID driverId) {
@@ -202,6 +222,7 @@ public class DriverProfileController {
 	 * Get active booking offers for current driver
 	 * GET /api/drivers/me/booking-offers
 	 */
+	@Bulkhead(name = "driverRestApi")
 	@GetMapping("/me/booking-offers")
 	@PreAuthorize("hasRole('DRIVER')")
 	public ResponseEntity<List<DriverBookingOfferResponse>> getBookingOffers() {
@@ -225,6 +246,7 @@ public class DriverProfileController {
 	 * Reject/decline a booking offer
 	 * PATCH /api/drivers/me/booking-offers/{bookingId}/reject
 	 */
+	@Bulkhead(name = "driverRestApi")
 	@PatchMapping("/me/booking-offers/{bookingId}/reject")
 	@PreAuthorize("hasRole('DRIVER')")
 	public ResponseEntity<Void> rejectBookingOffer(@PathVariable UUID bookingId) {

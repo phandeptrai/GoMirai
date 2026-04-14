@@ -37,6 +37,8 @@ $secrets["PAYMENT_MONGODB_URI"]     = $envVars["PAYMENT_MONGODB_URI"]
 $secrets["BOOKING_MONGODB_URI"]     = $envVars["BOOKING_MONGODB_URI"]
 $secrets["NOTIFICATION_MONGODB_URI"]= $envVars["NOTIFICATION_MONGODB_URI"]
 $secrets["REVIEW_MONGODB_URI"]      = $envVars["REVIEW_MONGODB_URI"]
+$secrets["RIDE_MONGODB_URI"]        = $envVars["RIDE_MONGODB_URI"]
+$secrets["TRACKING_MONGODB_URI"]    = $envVars["TRACKING_MONGODB_URI"]
 $secrets["SPRING_REDIS_URL"]        = $envVars["SPRING_REDIS_URL"]
 $rUrl = $envVars["SPRING_REDIS_URL"]
 # Có auth: redis://user:pass@host:port

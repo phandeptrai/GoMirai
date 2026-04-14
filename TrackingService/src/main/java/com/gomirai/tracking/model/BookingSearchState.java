@@ -1,6 +1,7 @@
 package com.gomirai.tracking.model;
 
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -16,6 +17,7 @@ import java.util.UUID;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
+@Builder
 public class BookingSearchState {
     private UUID bookingId;
     private Double pickupLatitude;
@@ -34,13 +36,8 @@ public class BookingSearchState {
     private String currency;
     private String pickupAddress;
     private String dropoffAddress;
-    
+
     // Track drivers who have already been notified to avoid duplicate offers
+    @Builder.Default
     private Set<String> notifiedDriverIds = new HashSet<>();
 }
-
-
-
-
-
-

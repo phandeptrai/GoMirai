@@ -1,6 +1,6 @@
-# ─────────────────────────────────────────────
+﻿# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # TRACKING SERVICE (8085)
-# ─────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -10,20 +10,27 @@ metadata:
     app: tracking-service
     tier: backend
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: tracking-service
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+    type: Recreate
+    
   template:
     metadata:
       labels:
         app: tracking-service
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: cloud.google.com/machine-family
+                operator: In
+                values:
+                - n2
       terminationGracePeriodSeconds: 30
       containers:
         - name: tracking-service
@@ -38,11 +45,11 @@ spec:
                 name: gomirai-secrets
           resources:
             requests:
-              memory: "512Mi"
-              cpu: "400m"   # PERF #3: 300m→400m (Redis writes + geo calculations)
+              memory: "384Mi"
+              cpu: "200m"
             limits:
-              memory: "512Mi"
-              cpu: "500m"   # 500m × 3 maxReplicas = 1.5 vCPU max
+              memory: "768Mi"
+              cpu: "450m"
           startupProbe:
             httpGet:
               path: /actuator/health
@@ -91,13 +98,23 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: tracking-service
-  minReplicas: 2
-  maxReplicas: 3   # PERF #3: 4→3 to save vCPU headroom
+  minReplicas: 1
+  maxReplicas: 2
   metrics:
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 50
+          averageUtilization: 55
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 300
 ---
+

@@ -49,7 +49,12 @@ public class DriverRatingUpdatedConsumer {
             Optional<DriverProfile> profileOpt = driverProfileRepository.findByUserId(event.getDriverUserId());
 
             if (profileOpt.isEmpty()) {
-                log.warn("✗ Driver profile not found for userId: {}", event.getDriverUserId());
+                // Defensive: some legacy publishers might send driverId instead of userId.
+                profileOpt = driverProfileRepository.findById(event.getDriverUserId());
+            }
+
+            if (profileOpt.isEmpty()) {
+                log.warn("✗ Driver profile not found for id (userId/driverId): {}", event.getDriverUserId());
                 acknowledgment.acknowledge();
                 return;
             }

@@ -1,0 +1,43 @@
+apiVersion: monitoring.googleapis.com/v1
+kind: ClusterRules
+metadata:
+  name: gomirai-sla-rules
+spec:
+  groups:
+  - name: gomirai.sla.http
+    rules:
+    - alert: GoMiraiHttpP95High
+      expr: |
+        histogram_quantile(0.95,
+          sum(rate(http_server_requests_seconds_bucket{application=~"api-gateway|ride-service|identity-service|payment-service|driver-service|tracking-service|communication-service"}[5m])) by (le, application)
+        ) > 3
+      for: 10m
+      labels:
+        severity: info
+      annotations:
+        summary: "p95 HTTP latency > 3s"
+        description: "Application {{ $labels.application }} — trending hot."
+
+    - alert: GoMiraiHttpP99High
+      expr: |
+        histogram_quantile(0.99,
+          sum(rate(http_server_requests_seconds_bucket{application=~"api-gateway|ride-service|identity-service|payment-service|driver-service|tracking-service|communication-service"}[5m])) by (le, application)
+        ) > 5
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "p99 HTTP latency > 5s"
+        description: "SLO breach risk for {{ $labels.application }}."
+
+    - alert: GoMiraiHttpRestTailOver10s
+      expr: |
+        histogram_quantile(0.999,
+          sum(rate(http_server_requests_seconds_bucket{application=~"api-gateway|ride-service|identity-service|payment-service|driver-service|tracking-service|communication-service"}[2m])) by (le, application)
+        ) > 10
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Tail latency > 10s"
+        description: "Hard SLA breach for {{ $labels.application }}."

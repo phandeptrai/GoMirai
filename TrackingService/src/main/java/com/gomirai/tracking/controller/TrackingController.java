@@ -5,6 +5,7 @@ import com.gomirai.tracking.dto.DriverLocationResponse;
 import com.gomirai.tracking.dto.NearbyDriverRequest;
 import com.gomirai.tracking.model.DriverGeoState;
 import com.gomirai.tracking.service.TrackingService;
+import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -43,6 +44,7 @@ public class TrackingController {
     /**
      * Cập nhật vị trí realtime - chỉ tài xế DRIVER mới được gọi.
      */
+    @Bulkhead(name = "trackingRestApi")
     @PostMapping("/location")
     @PreAuthorize("hasRole('DRIVER')")
     public ResponseEntity<?> updateLocation(@RequestBody @Valid DriverGeoState state) {
@@ -54,6 +56,7 @@ public class TrackingController {
     /**
      * Tìm tài xế lân cận - Chỉ hỗ trợ POST (JSON Body cho Mobile App/BookingService).
      */
+    @Bulkhead(name = "trackingRestApi")
     @PostMapping("/nearby")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> findNearbyDrivers(@RequestBody @Valid NearbyDriverRequest request) {
@@ -66,6 +69,7 @@ public class TrackingController {
      * Lấy vị trí hiện tại của tài xế - cho Customer tracking trong booking
      * Customer cần xem vị trí driver khi có booking đang active
      */
+    @Bulkhead(name = "trackingRestApi")
     @GetMapping("/drivers/{driverId}")
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> getDriverLocation(@PathVariable String driverId) {
@@ -77,9 +81,30 @@ public class TrackingController {
     }
 
     /**
+     * INTERNAL: Lấy vị trí driver theo driverId bằng Internal API Key.
+     *
+     * Dùng cho service-to-service calls (BookingService -> TrackingService) trong bối cảnh
+     * API Gateway strip JWT và dùng gateway-delegation headers.
+     *
+     * Auth:
+     * - InternalApiKeyFilter sẽ set principal=INTERNAL_SERVICE với authority ROLE_INTERNAL_SERVICE.
+     */
+    @Bulkhead(name = "trackingRestApi")
+    @GetMapping("/internal/drivers/{driverId}")
+    @PreAuthorize("hasRole('INTERNAL_SERVICE')")
+    public ResponseEntity<?> getDriverLocationInternal(@PathVariable String driverId) {
+        DriverGeoState state = trackingService.getDriverLocation(driverId);
+        if (state == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(state);
+    }
+
+    /**
      * Lấy vị trí hiện tại của chính driver - chỉ DRIVER.
      * Driver chỉ có thể lấy location của chính mình.
      */
+    @Bulkhead(name = "trackingRestApi")
     @GetMapping("/me")
     @PreAuthorize("hasRole('DRIVER')")
     public ResponseEntity<?> getMyLocation() {

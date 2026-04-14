@@ -29,13 +29,20 @@ import runReviewTests   from './review.test.js';
 
 import {
   BASE_URL, jsonHeaders, parseBody, randomPhone, extractBookingId,
+  unwrapData,
   ADMIN_PHONE, ADMIN_PASSWORD,
   DRIVER_PHONE, DRIVER_PASSWORD,
   CUSTOMER_PHONE, CUSTOMER_PASSWORD,
 } from './config.js';
 
-import { smokeOptions } from '../Config/options.js';
-export const options = smokeOptions;
+// ── Runner config ────────────────────────────────────────────────────────────
+// (Standalone options for this "aggregator" script; individual *.test.js files
+// define their own options when run directly.)
+export const options = {
+  vus: 1,
+  iterations: 1,
+  thresholds: { checks: ['rate==1.0'] },
+};
 
 // ============================================================================
 // SETUP — chạy 1 lần, tạo toàn bộ dữ liệu dùng chung
@@ -147,7 +154,11 @@ export function setup() {
         perMinuteRate: 1000, surgeMultiplier: 1.0, region: 'HCM', active: true }),
       { headers: jsonHeaders(adminToken) });
     body = parseBody(res) || {};
-    pricingRuleId = body?.ruleId || null;
+    const dto = unwrapData(body) || {};
+    pricingRuleId = dto?.ruleId || null;
+    if (!pricingRuleId) {
+      console.warn(`[6] WARN: Pricing rule create failed: status=${res.status} body=${String(res.body).slice(0, 300)}`);
+    }
 
     http.post(`${BASE_URL}/api/pricing/rules`,
       JSON.stringify({ vehicleType: 'CAR_4', baseFare: 20000, perKmRate: 8000,

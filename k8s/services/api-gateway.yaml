@@ -9,15 +9,16 @@ spec:
     matchLabels:
       app: api-gateway
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+    type: Recreate
   template:
     metadata:
       labels:
         app: api-gateway
     spec:
+      dnsConfig:
+        options:
+          - name: ndots
+            value: "1"
       containers:
         - name: api-gateway
           image: asia-southeast1-docker.pkg.dev/gomirai-prod/gomirai-repo/api-gateway:latest
@@ -28,13 +29,18 @@ spec:
                 name: gomirai-config
             - secretRef:
                 name: gomirai-secrets
+          env:
+            - name: JAVA_OPTS
+              value: "-Xms1024m -Xmx1536m -XX:MaxDirectMemorySize=256m -XX:+UseG1GC -XX:+UseContainerSupport"
+          ports:
+            - containerPort: 8080
           resources:
             requests:
-              memory: "512Mi"
-              cpu: "500m"   # PERF #3: 300m→500m to avoid throttling under JWT validation load
+              memory: "1Gi"
+              cpu: "450m"
             limits:
-              memory: "768Mi"  # slightly more headroom for burst
-              cpu: "600m"   # 600m × 5 maxReplicas = 3 vCPU max for gateway
+              memory: "2Gi"
+              cpu: "900m"
           startupProbe:
             httpGet:
               path: /actuator/health
@@ -66,7 +72,7 @@ metadata:
   name: api-gateway-service
   namespace: gomirai
 spec:
-  type: ClusterIP # ✅ Chỉ accessible nội bộ — nginx là entry point duy nhất
+  type: ClusterIP # âœ… Chá»‰ accessible ná»™i bá»™ â€” nginx lÃ  entry point duy nháº¥t
   selector:
     app: api-gateway
   ports:
@@ -85,7 +91,7 @@ spec:
     kind: Deployment
     name: api-gateway
   minReplicas: 2
-  maxReplicas: 5   # PERF #3: 6→5 to cap gateway at 3 vCPU total within 24 vCPU quota
+  maxReplicas: 2
   metrics:
     - type: Resource
       resource:
@@ -98,7 +104,16 @@ spec:
         name: memory
         target:
           type: Utilization
-          averageUtilization: 50
+          averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 300
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

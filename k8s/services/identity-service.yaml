@@ -1,0 +1,131 @@
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# IDENTITY SERVICE (8081)
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: identity-service
+  namespace: gomirai
+  labels:
+    app: identity-service
+    version: "1.0"
+    tier: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: identity-service
+  strategy:
+    type: Recreate
+    
+  template:
+    metadata:
+      labels:
+        app: identity-service
+        version: "1.0"
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: cloud.google.com/machine-family
+                operator: In
+                values:
+                - n2
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: identity-service
+          image: asia-southeast1-docker.pkg.dev/gomirai-prod/gomirai-repo/identity-service:latest
+          ports:
+            - containerPort: 8081
+              name: http
+          envFrom:
+            - configMapRef:
+                name: gomirai-config
+            - secretRef:
+                name: gomirai-secrets
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "600m"
+            limits:
+              memory: "1Gi"
+              cpu: "1200m"
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8081
+            failureThreshold: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 5"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: identity-service
+  namespace: gomirai
+spec:
+  selector:
+    app: identity-service
+  ports:
+    - port: 8081
+      targetPort: 8081
+      name: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: identity-service-hpa
+  namespace: gomirai
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: identity-service
+  minReplicas: 2
+  maxReplicas: 3
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 55
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 15
+    scaleDown:
+      stabilizationWindowSeconds: 300
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: identity-service-pdb
+  namespace: gomirai
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: identity-service

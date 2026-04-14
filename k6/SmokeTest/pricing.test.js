@@ -11,7 +11,7 @@
 import http from 'k6/http';
 import { check, group } from 'k6';
 import {
-  BASE_URL, jsonHeaders, parseBody,
+  BASE_URL, jsonHeaders, parseBody, unwrapData,
   ADMIN_PHONE, ADMIN_PASSWORD,
   CUSTOMER_PHONE, CUSTOMER_PASSWORD,
 } from './config.js';
@@ -56,12 +56,16 @@ export default function runPricingTests(data = {}) {
       }),
       { headers: jsonHeaders(adminToken) });
     let body = parseBody(res);
+    let dto = unwrapData(body);
     check(res, {
-      '[TC-30] Create MOTORBIKE rule - ruleId is UUID':      () => typeof body.ruleId === 'string' && body.ruleId.length === 36,
-      '[TC-30] Create MOTORBIKE rule - vehicleType correct': () => body.vehicleType === 'MOTORBIKE',
-      '[TC-30] Create MOTORBIKE rule - baseFare correct':    () => body.baseFare === 10000,
+      '[TC-30] Create MOTORBIKE rule - ruleId is UUID':      () => typeof dto.ruleId === 'string' && dto.ruleId.length === 36,
+      '[TC-30] Create MOTORBIKE rule - vehicleType correct': () => dto.vehicleType === 'MOTORBIKE',
+      '[TC-30] Create MOTORBIKE rule - baseFare correct':    () => dto.baseFare === 10000,
     });
-    if (body.ruleId && !pricingRuleId) pricingRuleId = body.ruleId;
+    if ((res.status < 200 || res.status >= 300) && __ENV.DEBUG_PRICING === '1') {
+      console.error(`[k6][pricing][TC-30] status=${res.status} body=${String(res.body).slice(0, 500)}`);
+    }
+    if (dto.ruleId && !pricingRuleId) pricingRuleId = dto.ruleId;
 
     // TC-31: Tạo rule CAR_4 → response có ruleId và vehicleType=CAR_4
     res = http.post(`${BASE_URL}/api/pricing/rules`,
@@ -71,14 +75,18 @@ export default function runPricingTests(data = {}) {
       }),
       { headers: jsonHeaders(adminToken) });
     body = parseBody(res);
+    dto = unwrapData(body);
     check(res, {
-      '[TC-31] Create CAR_4 rule - ruleId is UUID':      () => typeof body.ruleId === 'string' && body.ruleId.length === 36,
-      '[TC-31] Create CAR_4 rule - vehicleType correct': () => body.vehicleType === 'CAR_4',
+      '[TC-31] Create CAR_4 rule - ruleId is UUID':      () => typeof dto.ruleId === 'string' && dto.ruleId.length === 36,
+      '[TC-31] Create CAR_4 rule - vehicleType correct': () => dto.vehicleType === 'CAR_4',
     });
+    if ((res.status < 200 || res.status >= 300) && __ENV.DEBUG_PRICING === '1') {
+      console.error(`[k6][pricing][TC-31] status=${res.status} body=${String(res.body).slice(0, 500)}`);
+    }
 
     // TC-32: Lấy danh sách rules → array không rỗng, mỗi rule có ruleId
     res = http.get(`${BASE_URL}/api/pricing/rules`, { headers: jsonHeaders(adminToken) });
-    body = parseBody(res);
+    body = unwrapData(parseBody(res));
     check(res, {
       '[TC-32] List rules - is array':          () => Array.isArray(body),
       '[TC-32] List rules - not empty':         () => Array.isArray(body) && body.length > 0,
@@ -94,9 +102,10 @@ export default function runPricingTests(data = {}) {
         }),
         { headers: jsonHeaders(adminToken) });
       body = parseBody(res);
+      dto = unwrapData(body);
       check(res, {
-        '[TC-33] Update rule - baseFare updated to 12000': () => body.baseFare === 12000,
-        '[TC-33] Update rule - ruleId preserved':          () => body.ruleId === pricingRuleId,
+        '[TC-33] Update rule - baseFare updated to 12000': () => dto.baseFare === 12000,
+        '[TC-33] Update rule - ruleId preserved':          () => dto.ruleId === pricingRuleId,
       });
     }
 
@@ -117,19 +126,27 @@ export default function runPricingTests(data = {}) {
       JSON.stringify({ vehicleType: 'MOTORBIKE', distanceKm: 5.5, durationMinute: 20, region: 'HCM' }),
       { headers: { 'Content-Type': 'application/json' } });
     let body = parseBody(res);
+    let dto = unwrapData(body);
     check(res, {
-      '[TC-35] Estimate MOTORBIKE - estimatedFare > 0':      () => body.estimatedFare > 0,
-      '[TC-35] Estimate MOTORBIKE - appliedRuleId is UUID':  () => typeof body.appliedRuleId === 'string' && body.appliedRuleId.length === 36,
+      '[TC-35] Estimate MOTORBIKE - estimatedFare > 0':      () => dto.estimatedFare > 0,
+      '[TC-35] Estimate MOTORBIKE - appliedRuleId is UUID':  () => typeof dto.appliedRuleId === 'string' && dto.appliedRuleId.length === 36,
     });
+    if ((res.status < 200 || res.status >= 300) && __ENV.DEBUG_PRICING === '1') {
+      console.error(`[k6][pricing][TC-35] status=${res.status} body=${String(res.body).slice(0, 500)}`);
+    }
 
     // TC-36: Ước tính CAR_4 → estimatedFare > 0
     res = http.post(`${BASE_URL}/api/pricing/estimate`,
       JSON.stringify({ vehicleType: 'CAR_4', distanceKm: 10.0, durationMinute: 30, region: 'HCM' }),
       { headers: { 'Content-Type': 'application/json' } });
     body = parseBody(res);
+    dto = unwrapData(body);
     check(res, {
-      '[TC-36] Estimate CAR_4 - estimatedFare > 0': () => body.estimatedFare > 0,
+      '[TC-36] Estimate CAR_4 - estimatedFare > 0': () => dto.estimatedFare > 0,
     });
+    if ((res.status < 200 || res.status >= 300) && __ENV.DEBUG_PRICING === '1') {
+      console.error(`[k6][pricing][TC-36] status=${res.status} body=${String(res.body).slice(0, 500)}`);
+    }
 
     // TC-37: Thiếu vehicleType → KHÔNG có estimatedFare
     res = http.post(`${BASE_URL}/api/pricing/estimate`,

@@ -37,7 +37,7 @@ public class JwtService {
      */
     public JwtService(
         @Value("${security.jwt.secret}") String secret,
-        @Value("${security.jwt.access-ttl-ms:3600000}") long accessTtlMillis
+        @Value("${security.jwt.access-ttl-ms:86400000}") long accessTtlMillis
     ) {
         // Handle both BASE64 and plain text secrets
         byte[] secretBytes = secret.startsWith("BASE64:")
