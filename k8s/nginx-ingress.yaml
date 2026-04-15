@@ -42,7 +42,12 @@ data:
         # giữa các ApiGateway pods tự động
         upstream api_gateway {
             server api-gateway-service:8080;
-            keepalive 32;
+            # FIX: Tăng keepalive pool 32 → 256.
+            # Với 500 VUs, 32 connections không đủ — nginx buộc phải tạo rồi close connections liên tục
+            # gây ra TCP RST khi API Gateway nhận request đặng lên dead connections.
+            keepalive 256;
+            keepalive_requests 10000;  # một connection có thể phục vụ 10k requests trước bị rotate
+            keepalive_timeout 65s;    # đồng bộ với keepalive_timeout global bên trên
         }
 
         # ── HTTP Server ───────────────────────────────────────────────────────
@@ -83,10 +88,16 @@ data:
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
                 proxy_set_header X-Forwarded-Proto $scheme;
 
-                # REST SLA: ingress hard cap (10s) — see docs/SLA-ARCHITECTURE.md & gateway.proxy.total-timeout-seconds
+                # REST SLA: ingress hard cap (10s) — see docs/SLA-ARCHITECTURE.md
                 proxy_connect_timeout 3s;
                 proxy_read_timeout 10s;
                 proxy_send_timeout 10s;
+
+                # FIX: Retry khi connection bị forcibly closed (RST) trước gửi response.
+                # error = connection reset; http_502/503/504 = uđstream thất bại sau khi connect.
+                proxy_next_upstream error timeout http_502 http_503 http_504;
+                proxy_next_upstream_tries 2;
+                proxy_next_upstream_timeout 5s;
 
                 # Buffer settings
                 proxy_buffering on;
