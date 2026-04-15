@@ -16,6 +16,11 @@ public class MongoSlaConfig {
                 .applyToSocketSettings(s -> s
                         .connectTimeout(2, TimeUnit.SECONDS)
                         .readTimeout(3, TimeUnit.SECONDS))
-                .applyToConnectionPoolSettings(s -> s.maxWaitTime(3, TimeUnit.SECONDS));
+                .applyToConnectionPoolSettings(s -> s
+                        .maxWaitTime(3, TimeUnit.SECONDS)
+                        .maxSize(15)           // default 100 → 15 (1-2 replicas, 15 conns/pod đủ)
+                        .minSize(2)            // keep-alive 2 connections để tránh cold connect
+                        .maxConnectionIdleTime(30, TimeUnit.SECONDS)
+                        .maxConnectionLifeTime(120, TimeUnit.SECONDS));
     }
 }

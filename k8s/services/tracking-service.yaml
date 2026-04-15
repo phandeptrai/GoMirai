@@ -1,54 +1,39 @@
-﻿# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-# TRACKING SERVICE (8085)
-# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: tracking-service
   namespace: gomirai
-  labels:
-    app: tracking-service
-    tier: backend
 spec:
   replicas: 1
   selector:
     matchLabels:
       app: tracking-service
-  strategy:
-    type: Recreate
-    
   template:
     metadata:
       labels:
         app: tracking-service
     spec:
-      affinity:
-        nodeAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            nodeSelectorTerms:
-            - matchExpressions:
-              - key: cloud.google.com/machine-family
-                operator: In
-                values:
-                - n2
       terminationGracePeriodSeconds: 30
       containers:
         - name: tracking-service
           image: asia-southeast1-docker.pkg.dev/gomirai-prod/gomirai-repo/tracking-service:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8085
-              name: http
           envFrom:
             - configMapRef:
                 name: gomirai-config
             - secretRef:
                 name: gomirai-secrets
+          env:
+            - name: JAVA_OPTS
+              value: "-Xms256m -Xmx512m -XX:+UseG1GC -XX:MaxMetaspaceSize=160m -XX:+ExitOnOutOfMemoryError"
           resources:
             requests:
-              memory: "384Mi"
+              memory: "512Mi"
               cpu: "200m"
             limits:
-              memory: "768Mi"
+              memory: "960Mi"
               cpu: "450m"
           startupProbe:
             httpGet:
@@ -56,24 +41,6 @@ spec:
               port: 8085
             failureThreshold: 30
             periodSeconds: 10
-          readinessProbe:
-            httpGet:
-              path: /actuator/health
-              port: 8085
-            initialDelaySeconds: 10
-            periodSeconds: 10
-            failureThreshold: 3
-          livenessProbe:
-            httpGet:
-              path: /actuator/health
-              port: 8085
-            initialDelaySeconds: 15
-            periodSeconds: 20
-            failureThreshold: 3
-          lifecycle:
-            preStop:
-              exec:
-                command: ["sh", "-c", "sleep 5"]
 ---
 apiVersion: v1
 kind: Service
@@ -84,9 +51,8 @@ spec:
   selector:
     app: tracking-service
   ports:
-    - port: 8085
+    - port: 8084
       targetPort: 8085
-      name: http
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -99,22 +65,28 @@ spec:
     kind: Deployment
     name: tracking-service
   minReplicas: 1
-  maxReplicas: 2
+  maxReplicas: 3
   metrics:
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 55
-  behavior:
-    scaleUp:
-      stabilizationWindowSeconds: 0
-      policies:
-      - type: Percent
-        value: 100
-        periodSeconds: 15
-    scaleDown:
-      stabilizationWindowSeconds: 300
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
 ---
-
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: tracking-service-pdb
+  namespace: gomirai
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: tracking-service
