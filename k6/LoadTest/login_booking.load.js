@@ -10,9 +10,9 @@ export const options = {
       executor: 'ramping-vus',
       startVUs: 0,
       stages: [
-        { duration: __ENV.RAMP_UP || '15s', target: Number(__ENV.TARGET_VUS || 10) },
-        { duration: __ENV.STEADY || '15s', target: Number(__ENV.TARGET_VUS || 20) },
-        { duration: __ENV.RAMP_DOWN || '15s', target: 0 },
+        { duration: __ENV.RAMP_UP || '1m', target: Number(__ENV.TARGET_VUS || 30) },
+        { duration: __ENV.STEADY || '3m', target: Number(__ENV.TARGET_VUS || 400) },
+        { duration: __ENV.RAMP_DOWN || '1m', target: 0 },
       ],
       gracefulRampDown: '30s',
     },

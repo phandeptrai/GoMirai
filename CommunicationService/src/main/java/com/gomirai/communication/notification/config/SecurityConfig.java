@@ -46,6 +46,7 @@ public class SecurityConfig {
                 // Review public read endpoints (used by DriverService + unauthenticated clients)
                 .requestMatchers(org.springframework.http.HttpMethod.GET,
                         "/api/review/reviewee/**",
+                        "/api/review/booking/*/exists",
                         "/api/review/booking/**/exists")
                 .permitAll()
                 .anyRequest().authenticated()

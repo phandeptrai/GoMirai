@@ -7,10 +7,10 @@ data:
   # Infrastructure Hosts (Sá» dá»¥ng tÃªn Service trong K8s)
   SPRING_CLOUD_CONSUL_HOST: "consul-service"
   SPRING_CLOUD_CONSUL_PORT: "8500"
-  SPRING_DATA_REDIS_HOST: "redis"
+  SPRING_DATA_REDIS_HOST: "redis-service"
   SPRING_DATA_REDIS_PORT: "6379"
   SPRING_DATA_MONGODB_URI: "mongodb://mongodb-service.gomirai.svc.cluster.local:27017/gomirai?replicaSet=rs0"
-  SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka-service:29092"
+  SPRING_KAFKA_BOOTSTRAP_SERVERS: "kafka-service:9092"
   
   # Logging & Discovery
   SPRING_CACHE_TYPE: "redis"

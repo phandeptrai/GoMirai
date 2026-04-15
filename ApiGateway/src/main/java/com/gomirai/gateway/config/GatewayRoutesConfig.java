@@ -26,23 +26,22 @@ public class GatewayRoutesConfig {
                 .route("identity-service", r -> r.path("/api/auth/**", "/api/users/**")
                         .uri("lb://identity-service"))
                 
-                // RIDE SERVICE (Booking, Pricing, Review)
-                .route("ride-service-booking", r -> r.path("/api/booking/**")
+                // RIDE SERVICE (Booking, Pricing, Map)
+                .route("ride-service", r -> r.path("/api/booking/**", "/api/pricing/**", "/api/map/**")
                         .uri("lb://ride-service"))
-                .route("ride-service-pricing", r -> r.path("/api/pricing/**")
-                        .uri("lb://ride-service"))
-                .route("communication-service-review", r -> r.path("/api/review/**")
-                        .uri("lb://communication-service"))
-                .route("communication-service-notification", r -> r.path("/api/notification/**")
+                
+                // DRIVER SERVICE
+                .route("driver-service", r -> r.path("/api/driver/**", "/api/drivers/**")
+                        .filters(f -> f.rewritePath("/api/drivers(?<segment>/?.*)", "/api/driver${segment}"))
+                        .uri("lb://driver-service"))
+                
+                // COMMUNICATION SERVICE (Review, Notification)
+                .route("communication-service", r -> r.path("/api/review/**", "/api/notification/**")
                         .uri("lb://communication-service"))
                 
                 // TRACKING SERVICE
-                .route("tracking-service", r -> r.path("/api/tracking/**", "/api/driver/**")
+                .route("tracking-service", r -> r.path("/api/tracking/**")
                         .uri("lb://tracking-service"))
-                
-                // MAP SERVICE (Optional internal proxy)
-                .route("map-service", r -> r.path("/api/map/**")
-                        .uri("lb://map-service"))
                 
                 .build();
     }
