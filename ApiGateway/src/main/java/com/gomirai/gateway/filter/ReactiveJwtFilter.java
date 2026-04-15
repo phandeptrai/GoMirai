@@ -38,14 +38,15 @@ public class ReactiveJwtFilter implements GlobalFilter, Ordered {
         String path = exchange.getRequest().getURI().getPath();
         
         // Skip public endpoints
-        if (isPublicPath(path)) {
+        boolean isPublic = isPublicPath(path);
+        if (isPublic) {
             return chain.filter(exchange);
         }
 
         String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
         
         if (!StringUtils.hasText(authHeader) || !authHeader.startsWith("Bearer ")) {
-            logger.warn("Request missing JWT: {}", path);
+            logger.warn("Request blocked (Missing JWT): {}", path);
             exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
             return exchange.getResponse().setComplete();
         }
@@ -76,7 +77,10 @@ public class ReactiveJwtFilter implements GlobalFilter, Ordered {
         return path.startsWith("/api/auth/") || 
                path.startsWith("/health") || 
                path.startsWith("/actuator/") ||
-               path.equals("/api/pricing/estimate");
+               path.startsWith("/api/review/reviewee/") ||
+               path.contains("/exists") ||
+               path.startsWith("/api/pricing/estimate") ||
+               ( (path.startsWith("/api/driver") || path.startsWith("/api/drivers")) && path.contains("/public") );
     }
 
     @Override

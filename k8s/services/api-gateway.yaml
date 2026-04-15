@@ -9,7 +9,7 @@ spec:
     matchLabels:
       app: api-gateway
   strategy:
-    type: Recreate
+    type: RollingUpdate
   template:
     metadata:
       labels:
@@ -22,8 +22,7 @@ spec:
       containers:
         - name: api-gateway
           image: asia-southeast1-docker.pkg.dev/gomirai-prod/gomirai-repo/api-gateway:latest
-          ports:
-            - containerPort: 8080
+          imagePullPolicy: Always
           envFrom:
             - configMapRef:
                 name: gomirai-config
@@ -31,7 +30,7 @@ spec:
                 name: gomirai-secrets
           env:
             - name: JAVA_OPTS
-              value: "-Xms1024m -Xmx1536m -XX:MaxDirectMemorySize=256m -XX:+UseG1GC -XX:+UseContainerSupport"
+              value: "-Xms512m -Xmx1024m -XX:+UseG1GC"
           ports:
             - containerPort: 8080
           resources:
@@ -47,24 +46,6 @@ spec:
               port: 8080
             failureThreshold: 30
             periodSeconds: 10
-          livenessProbe:
-            httpGet:
-              path: /actuator/health
-              port: 8080
-            initialDelaySeconds: 15
-            periodSeconds: 20
-            failureThreshold: 3
-          readinessProbe:
-            httpGet:
-              path: /actuator/health
-              port: 8080
-            initialDelaySeconds: 10
-            periodSeconds: 10
-            failureThreshold: 3
-          lifecycle:
-            preStop:
-              exec:
-                command: ["sh", "-c", "sleep 5"]
 ---
 apiVersion: v1
 kind: Service
@@ -72,7 +53,7 @@ metadata:
   name: api-gateway-service
   namespace: gomirai
 spec:
-  type: ClusterIP # âœ… Chá»‰ accessible ná»™i bá»™ â€” nginx lÃ  entry point duy nháº¥t
+  type: ClusterIP
   selector:
     app: api-gateway
   ports:
@@ -91,29 +72,20 @@ spec:
     kind: Deployment
     name: api-gateway
   minReplicas: 2
-  maxReplicas: 2
+  maxReplicas: 5
   metrics:
     - type: Resource
       resource:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 50
+          averageUtilization: 70
     - type: Resource
       resource:
         name: memory
         target:
           type: Utilization
-          averageUtilization: 70
-  behavior:
-    scaleUp:
-      stabilizationWindowSeconds: 0
-      policies:
-        - type: Percent
-          value: 100
-          periodSeconds: 15
-    scaleDown:
-      stabilizationWindowSeconds: 300
+          averageUtilization: 75
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -121,8 +93,7 @@ metadata:
   name: api-gateway-pdb
   namespace: gomirai
 spec:
-  minAvailable: 2
+  minAvailable: 1
   selector:
     matchLabels:
       app: api-gateway
----

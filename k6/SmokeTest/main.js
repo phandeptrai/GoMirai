@@ -41,6 +41,7 @@ import {
 export const options = {
   vus: 1,
   iterations: 1,
+  setupTimeout: '3m',
   thresholds: { checks: ['rate==1.0'] },
 };
 

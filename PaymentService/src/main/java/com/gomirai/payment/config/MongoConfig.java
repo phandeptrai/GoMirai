@@ -18,6 +18,11 @@ public class MongoConfig {
                 .applyToSocketSettings(s -> s
                         .connectTimeout(2, TimeUnit.SECONDS)
                         .readTimeout(3, TimeUnit.SECONDS))
-                .applyToConnectionPoolSettings(s -> s.maxWaitTime(3, TimeUnit.SECONDS));
+                .applyToConnectionPoolSettings(s -> s
+                        .maxWaitTime(3, TimeUnit.SECONDS)
+                        .maxSize(20)           // limit connections: 1 replica × 20 = 20 total
+                        .minSize(2)            // keep-alive khi idle
+                        .maxConnectionIdleTime(30, TimeUnit.SECONDS)
+                        .maxConnectionLifeTime(120, TimeUnit.SECONDS));
     }
 }

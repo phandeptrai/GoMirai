@@ -67,10 +67,20 @@ public class TrackingService {
 
     // --- OPTIMIZATION: Micro-cache for nearby results (5s TTL) ---
     // Cache key: quantized lat,lon + radius + type + status
+    // FIX: Giảm maximumSize 500 -> 200 để giảm heap footprint (~40% savings)
     private final Cache<String, List<DriverLocationResponse>> nearbyCache = Caffeine.newBuilder()
             .expireAfterWrite(5, TimeUnit.SECONDS)
-            .maximumSize(500)
+            .maximumSize(200)
             .build();
+
+    // FIX: Dedicated executor cho async cleanup để tránh ForkJoinPool.commonPool() leaks.
+    // Dùng single thread daemon để cleanup tasks không block GC và có thể bị terminate khi idle.
+    private final java.util.concurrent.ExecutorService cleanupExecutor =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "geo-cleanup");
+                t.setDaemon(true);
+                return t;
+            });
 
     /**
      * Cập nhật vị trí và metadata của tài xế trong Redis.
@@ -199,7 +209,8 @@ public class TrackingService {
 
                     // --- OPTIMIZATION: Move cleanup to Async thread ---
                     if (!expiredDriverIds.isEmpty()) {
-                        CompletableFuture.runAsync(() -> cleanupExpiredGeoPoints(expiredDriverIds));
+                        // FIX: Dùng cleanupExecutor thay vì ForkJoinPool.commonPool()
+                        CompletableFuture.runAsync(() -> cleanupExpiredGeoPoints(expiredDriverIds), cleanupExecutor);
                     }
 
                     if (drivers.size() >= request.getLimit()) {

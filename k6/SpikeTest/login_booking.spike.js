@@ -7,10 +7,9 @@ export const options = {
       executor: 'ramping-vus',
       startVUs: 0,
       stages: [
-        { duration: __ENV.BASELINE || '30s', target: Number(__ENV.BASELINE_VUS || 5) },
-        { duration: __ENV.SPIKE_HOLD || '30s', target: Number(__ENV.SPIKE_VUS || 90) },
-        { duration: __ENV.RECOVERY || '1m', target: Number(__ENV.BASELINE_VUS || 5) },
-        { duration: __ENV.RAMP_DOWN || '30s', target: 0 },
+        { duration: __ENV.BASELINE || '5s', target: Number(__ENV.BASELINE_VUS || 0) },
+        { duration: __ENV.SPIKE_HOLD || '4m', target: Number(__ENV.SPIKE_VUS || 1500) },
+        { duration: __ENV.RAMP_DOWN || '1m', target: 0 },
       ],
       gracefulRampDown: '30s',
     },

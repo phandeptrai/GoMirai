@@ -33,7 +33,7 @@ fi
 
 # 3. PERFORMANCE GATE
 echo "📊 [VERIFY] Running Performance Gate (k6 load)..."
-k6 run -e BASE_URL=$BASE_URL k6/pipeline_gate.js
+k6 run -e BASE_URL=$BASE_URL k6/LoadTest/login_booking.load.js
 if [ $? -ne 0 ]; then
     echo "Failed at Performance Gate stage."
     trigger_rollback

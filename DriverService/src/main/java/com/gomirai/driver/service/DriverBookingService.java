@@ -180,13 +180,12 @@ public class DriverBookingService {
     }
     
     /**
-     * Filter drivers by availability status (only ONLINE drivers)
+     * Filter drivers by availability status (only ONLINE drivers).
+     * FIX: Dùng findAllById thay vì N lần findById riêng lẻ (N+1 MongoDB query).
      */
     private List<UUID> filterAvailableDrivers(List<UUID> driverIds) {
-        return driverIds.stream()
-            .map(driverId -> driverProfileRepository.findById(driverId))
-            .filter(optional -> optional.isPresent())
-            .map(optional -> optional.get())
+        // One MongoDB FIND với { _id: { $in: [...] } } thay vì N lần findById
+        return driverProfileRepository.findAllById(driverIds).stream()
             .filter(driver -> driver.getAvailabilityStatus() == DriverAvailabilityStatus.ONLINE)
             .filter(driver -> driver.getAccountStatus().toString().equals("ACTIVE"))
             .map(DriverProfile::getDriverId)

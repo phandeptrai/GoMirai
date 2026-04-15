@@ -38,7 +38,14 @@ public class DriverBookingOffer {
     private String dropoffAddress;
     
     private LocalDateTime offeredAt;
-    private LocalDateTime expiresAt; // Offer expires after 30 seconds
+
+    /**
+     * MongoDB TTL Index: xóa document tự động sau 60s kể từ expiredAt.
+     * Điều này ngăn offers cũ tích luỹ và bị load vào JVM heap.
+     * Ngoài ra vẫn có BookingOfferCleanupScheduler làm safety net.
+     */
+    @Indexed(expireAfterSeconds = 60)
+    private LocalDateTime expiresAt; // Offer expires after 30 seconds + 30s TTL buffer
     private Boolean isActive; // True if offer is still valid
     
     public DriverBookingOffer(UUID bookingId, UUID driverId) {
